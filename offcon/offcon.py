@@ -10,11 +10,11 @@ from Bio.SeqRecord import SeqRecord
 from collections import defaultdict
 
 
-def parse_records(records):
-    # record_longest = max([len(r.seq) for r in records])
-    # record_rightmost = max([r.pos+len(r.seq) for r in records])
-    # ref_max_len = record_rightmost + 1000
-    ref_max_len = 100000
+def parse_records(sam_path, ref_max_len=100000):
+    
+    with open(sam_path, 'r') as sam_fh:
+        records = simplesam.Reader(sam_fh)
+
     weights = [{'A':0,'T':0,'G':0,'C':0,'N':0} for p in range(ref_max_len)]
     insertions = [defaultdict(int) for p in range(ref_max_len)]
     deletions = [0] * ref_max_len
@@ -29,7 +29,6 @@ def parse_records(records):
             if operation == 'M':
                 for pos in range(length):
                     q_nt = record.seq[q_pos]
-                    weights[r_pos] = {}
                     weights[r_pos][q_nt] += 1
                     r_pos += 1
                     q_pos += 1
@@ -62,36 +61,35 @@ def weights_prop(weights):
     return weights_prop
 
 
-def consensus_sequence(weights, insertions, deletions, min_coverage):
+def consensus_sequence(weights, insertions, deletions, min_coverage=1):
     consensus = ''
+    ins_total, del_total, n_total = 0, 0, 0
     for pos, weight in enumerate(weights):
         ins_freq = sum(insertions[pos].values()) if insertions[pos] else 0
         del_freq = deletions[pos]
         coverage = sum(weight.values())
         consensus_threshold = coverage * 0.5
-        if coverage < min_coverage or del_freq > consensus_threshold:
-            if coverage < min_coverage:
-                print('lowcov')
-            pass # Skip position
+        if del_freq > consensus_threshold:
+            del_total += 1
+        elif coverage < min_coverage:
+            consensus += 'N'
+            n_total += 1
         else:
             consensus += max(weight, key=lambda k: weight[k])
         if ins_freq > consensus_threshold:
             top_ins, top_ins_freq = max(insertions[pos].items(), key=lambda x:x[1])
             consensus += top_ins
+            ins_total += 1
 
     return consensus.strip('N')
 
 
 if __name__ == '__main__':
 
-    with open(sys.argv[1], 'r') as sam_fh:
-        records = simplesam.Reader(sam_fh)
-        weights, insertions, deletions = parse_records(records)
-
-    cns = consensus_sequence(weights, insertions, deletions, 1)
-
-    cns_record = SeqRecord(Seq(cns), id='cns', description='')
-
+    weights, insertions, deletions = parse_records(records)
+    consensus = consensus_sequence(weights, insertions, deletions)
+    
+    consensus_record = SeqRecord(Seq(cns), id='cns', description='')
     SeqIO.write(cns_record, sys.stdout, format='fasta')
 
-    print(coverage(weights))
+    # print(coverage(weights))
