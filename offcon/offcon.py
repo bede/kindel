@@ -61,13 +61,14 @@ def weights_prop(weights):
     return weights_prop
 
 
-def consensus_sequence(weights, insertions, deletions):
+def consensus_sequence(weights, insertions, deletions, min_coverage):
     consensus = ''
     for pos, weight in enumerate(weights):
         ins_freq = sum(insertions[pos].values()) if insertions[pos] else 0
         del_freq = deletions[pos]
-        cons_threshold = sum(weight.values())*0.5
-        if del_freq < cons_threshold:
+        coverage = sum(weight.values())
+        consensus_threshold = coverage * 0.5
+        if coverage >= min_coverage and del_freq < consensus_threshold:
             consensus += max(weight, key=lambda k: weight[k])
         if ins_freq > cons_threshold:
             top_ins, top_ins_freq = max(insertions[pos].items(), key=lambda x:x[1])
@@ -82,7 +83,7 @@ if __name__ == '__main__':
         records = simplesam.Reader(sam_fh)
         weights, insertions, deletions = parse_records(records)
 
-    cns = consensus_sequence(weights, insertions, deletions)
+    cns = consensus_sequence(weights, insertions, deletions, 10)
 
     cns_record = SeqRecord(Seq(cns), id='cns', description='')
 
