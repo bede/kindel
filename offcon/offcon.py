@@ -19,8 +19,8 @@ def parse_records(records):
     insertions = [defaultdict(int) for p in range(ref_max_len)]
     deletions = [0] * ref_max_len
     for i, record in enumerate(records):
-        if i % 100000 == 0:
-            sys.stderr.write('Processed ' + str(i) + ' records...\n') 
+        if i % 100000 == 0 and i:
+            print('Processed', str(i), 'records...', file=sys.stderr) 
         q_pos = 0 
         r_pos = record.pos
         first_iteration = True
@@ -29,6 +29,7 @@ def parse_records(records):
             if operation == 'M':
                 for pos in range(length):
                     q_nt = record.seq[q_pos]
+                    weights[r_pos] = {}
                     weights[r_pos][q_nt] += 1
                     r_pos += 1
                     q_pos += 1
@@ -68,9 +69,13 @@ def consensus_sequence(weights, insertions, deletions, min_coverage):
         del_freq = deletions[pos]
         coverage = sum(weight.values())
         consensus_threshold = coverage * 0.5
-        if coverage >= min_coverage and del_freq < consensus_threshold:
+        if coverage < min_coverage or del_freq > consensus_threshold:
+            if coverage < min_coverage:
+                print('lowcov')
+            pass # Skip position
+        else:
             consensus += max(weight, key=lambda k: weight[k])
-        if ins_freq > cons_threshold:
+        if ins_freq > consensus_threshold:
             top_ins, top_ins_freq = max(insertions[pos].items(), key=lambda x:x[1])
             consensus += top_ins
 
@@ -83,7 +88,7 @@ if __name__ == '__main__':
         records = simplesam.Reader(sam_fh)
         weights, insertions, deletions = parse_records(records)
 
-    cns = consensus_sequence(weights, insertions, deletions, 10)
+    cns = consensus_sequence(weights, insertions, deletions, 1)
 
     cns_record = SeqRecord(Seq(cns), id='cns', description='')
 
