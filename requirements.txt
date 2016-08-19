@@ -1,0 +1,2 @@
+biopython==1.67
+simplesam==0.0.2
