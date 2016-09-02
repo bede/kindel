@@ -10,9 +10,9 @@ from Bio.SeqRecord import SeqRecord
 from collections import defaultdict
 
 
-def parse_records(sam_path):
-    with open(sam_path, 'r') as sam_fh:
-        records = simplesam.Reader(sam_fh)
+def parse_records(bam_path):
+    with open(bam_path, 'r') as bam_fh:
+        records = simplesam.Reader(bam_fh)
         first_sq = list(records.header['@SQ'].values())[0] if '@SQ' in records.header else None
         ref_name = list(list(records.header.values())[0].keys())[0].replace('SN:','') if first_sq else 'aln'
         ref_len = int(next(iter(first_sq)).replace('LN:',''))+3 if first_sq else 100000
@@ -47,64 +47,79 @@ def parse_records(sam_path):
                     else:
                         q_pos += length
                 first_iteration = False
-
     return weights, insertions, deletions, ref_name
 
 
-def consensus_sequence(weights, insertions, deletions, prop_threshold, min_coverage):
+def consensus_sequence(weights, insertions, deletions, threshold_weight, min_depth):
     consensus = ''
     changes = [None] * len(weights)
     for pos, weight in enumerate(weights):
         ins_freq = sum(insertions[pos].values()) if insertions[pos] else 0
         del_freq = deletions[pos]
         coverage = sum(weight.values())
-        freq_threshold = coverage * prop_threshold
-        if del_freq > freq_threshold:
+        threshold_weight_freq = coverage * threshold_weight
+        if del_freq > threshold_weight_freq:
             changes[pos] = 'D'
-        elif coverage < min_coverage:
+        elif coverage < min_depth:
             consensus += 'N'
             changes[pos] = 'N'
         else:
             consensus += max(weight, key=lambda k: weight[k])
-        if ins_freq > freq_threshold:
+        if ins_freq > threshold_weight_freq:
             top_ins, top_ins_freq = max(insertions[pos].items(), key=lambda x:x[1])
             consensus += top_ins
             changes[pos] = 'I'
-
     return consensus, changes
+
 
 def consensus_seqrecord(consensus, ref_name):
     return SeqRecord(Seq(consensus), id=ref_name + '_cns', description='')
 
-def report(changes, prop_threshold, min_coverage):
+
+def report(weights, changes, threshold_weight, min_depth):
+    coverage = [sum(weight.values()) for weight in weights] 
     ambiguous_sites = []
     insertion_sites = []
     deletion_sites = []
     for pos, change in enumerate(changes):
         if change == 'N':
             ambiguous_sites.append(str(pos))
-        if change == 'I':
+        elif change == 'I':
             ambiguous_sites.append(str(pos+1))
-        if change == 'D':
+        elif change == 'D':
             ambiguous_sites.append(str(pos))
     report = '========================= REPORT ===========================\n'
-    report += 'consensus threshold: {}\n'.format(prop_threshold)
-    report += 'minimum coverage: {}\n'.format(min_coverage)
+    report += 'consensus weight: {}\n'.format(threshold_weight)
+    report += 'minimum depth: {}\n'.format(min_depth)
+    report += 'min,max observed depth: {},{}\n'.format(min(coverage), max(coverage))
     report += 'ambiguous sites: {}\n'.format(', '.join(ambiguous_sites))
     report += 'insertion sites: {}\n'.format(', '.join(insertion_sites))
     report += 'deletion sites: {}\n'.format(', '.join(deletion_sites))
     report += '============================================================\n'
-
     return report
+
+
+def bam_to_consensus_seqrecord(bam_path, threshold_weight=0.5, min_depth=1):
+    weights, insertions, deletions, ref_name = parse_records(bam_path)
+    consensus, changes = consensus_sequence(weights, insertions, deletions, threshold_weight, min_depth)
+    consensus_record = consensus_seqrecord(consensus, ref_name)
+    return consensus_record
+
+
+def bam_to_consensus_fasta(bam_path, fasta_path=sys.stdout, threshold_weight=0.5, min_depth=1):
+    weights, insertions, deletions, ref_name = parse_records(bam_path)
+    consensus, changes = consensus_sequence(weights, insertions, deletions, threshold_weight, min_depth)
+    consensus_record = consensus_seqrecord(consensus, ref_name)
+    SeqIO.write(consensus_record, fasta_path, format='fasta')
 
 
 if __name__ == '__main__':
 
-    sam_path = sys.argv[1]
-    prop_threshold = 0.5
-    min_coverage = 1
-    weights, insertions, deletions, ref_name = parse_records(sam_path)
-    consensus, changes = consensus_sequence(weights, insertions, deletions, prop_threshold, min_coverage)    
+    bam_path = sys.argv[1]
+    threshold_weight = 0.5
+    min_depth = 1
+    weights, insertions, deletions, ref_name = parse_records(bam_path)
+    consensus, changes = consensus_sequence(weights, insertions, deletions, threshold_weight, min_depth)
     consensus_record = consensus_seqrecord(consensus, ref_name)
     SeqIO.write(consensus_record, sys.stdout, format='fasta')
-    print(report(changes, prop_threshold, min_coverage))
+    print(report(weights, changes, threshold_weight, min_depth), file=sys.stderr, end='')
