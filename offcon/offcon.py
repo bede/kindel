@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import os
 import sys
 import simplesam
 
@@ -22,7 +21,7 @@ def parse_records(sam_path):
         deletions = [0] * ref_len
         for i, record in enumerate(records):
             if i % 100000 == 0 and i:
-                print('Processed', str(i), 'records...', file=sys.stderr) 
+                print('…Processed', str(i), 'records', file=sys.stderr) 
             q_pos = 0 
             r_pos = record.pos-1
             first_iteration = True
@@ -52,30 +51,32 @@ def parse_records(sam_path):
     return weights, insertions, deletions, ref_name
 
 
-def consensus_sequence(weights, insertions, deletions, min_coverage=1):
+def consensus_sequence(weights, insertions, deletions, prop_threshold, min_coverage):
     consensus = ''
     changes = [None] * len(weights)
     for pos, weight in enumerate(weights):
         ins_freq = sum(insertions[pos].values()) if insertions[pos] else 0
         del_freq = deletions[pos]
         coverage = sum(weight.values())
-        consensus_threshold = coverage * 0.5
-        if del_freq > consensus_threshold:
+        freq_threshold = coverage * prop_threshold
+        if del_freq > freq_threshold:
             changes[pos] = 'D'
         elif coverage < min_coverage:
             consensus += 'N'
             changes[pos] = 'N'
         else:
             consensus += max(weight, key=lambda k: weight[k])
-        if ins_freq > consensus_threshold:
+        if ins_freq > freq_threshold:
             top_ins, top_ins_freq = max(insertions[pos].items(), key=lambda x:x[1])
             consensus += top_ins
             changes[pos] = 'I'
 
     return consensus, changes
 
+def consensus_seqrecord(consensus, ref_name):
+    return SeqRecord(Seq(consensus), id=ref_name + '_cns', description='')
 
-def report(changes):
+def report(changes, prop_threshold, min_coverage):
     ambiguous_sites = []
     insertion_sites = []
     deletion_sites = []
@@ -87,9 +88,11 @@ def report(changes):
         if change == 'D':
             ambiguous_sites.append(str(pos))
     report = '========================= REPORT ===========================\n'
-    report += 'ambiguous sites: {} \n'.format(', '.join(ambiguous_sites))
-    report += 'insertion sites: {} \n'.format(', '.join(insertion_sites))
-    report += 'deletion sites: {} \n'.format(', '.join(deletion_sites))
+    report += 'consensus threshold: {}\n'.format(prop_threshold)
+    report += 'minimum coverage: {}\n'.format(min_coverage)
+    report += 'ambiguous sites: {}\n'.format(', '.join(ambiguous_sites))
+    report += 'insertion sites: {}\n'.format(', '.join(insertion_sites))
+    report += 'deletion sites: {}\n'.format(', '.join(deletion_sites))
     report += '============================================================\n'
 
     return report
@@ -98,8 +101,10 @@ def report(changes):
 if __name__ == '__main__':
 
     sam_path = sys.argv[1]
+    prop_threshold = 0.5
+    min_coverage = 1
     weights, insertions, deletions, ref_name = parse_records(sam_path)
-    consensus, changes = consensus_sequence(weights, insertions, deletions)    
-    consensus_record = SeqRecord(Seq(consensus), id=ref_name + '_cns', description='')
+    consensus, changes = consensus_sequence(weights, insertions, deletions, prop_threshold, min_coverage)    
+    consensus_record = consensus_seqrecord(consensus, ref_name)
     SeqIO.write(consensus_record, sys.stdout, format='fasta')
-    print(report(changes))
+    print(report(changes, prop_threshold, min_coverage))
