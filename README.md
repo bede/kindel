@@ -6,7 +6,6 @@ Existing open source consensus calling approaches are complicated and typically 
 ## Installation
 ```
 pip3 install kindel
-
 ```
 Dependencies: `simplesam`, `biopython` and `samtools` (for BAM input)
 
@@ -14,8 +13,8 @@ Dependencies: `simplesam`, `biopython` and `samtools` (for BAM input)
 ### Command line
 ```
 kindel alignment.bam --min-depth 1 --threshold-weight 0.5
-# Alignment goes to stdout, report to stderr
 ```
+The consensus fasta is sent to `stdout` and a report to `stderr`
 
 ### Python3
 ```

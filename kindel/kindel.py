@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 import sys
+
+import tqdm
 import simplesam
 
 from Bio import SeqIO
@@ -19,9 +21,7 @@ def parse_records(bam_path):
         weights = [{'A':0,'T':0,'G':0,'C':0,'N':0} for p in range(ref_len)]
         insertions = [defaultdict(int) for p in range(ref_len)]
         deletions = [0] * ref_len
-        for i, record in enumerate(records):
-            if i % 100000 == 0 and i:
-                print('…Processed', str(i), 'records', file=sys.stderr) 
+        for i, record in tqdm.tqdm(enumerate(records)):
             q_pos = 0 
             r_pos = record.pos-1
             first_iteration = True
