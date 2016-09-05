@@ -1,1 +1,6 @@
 .DS_Store
+*.py[cod]
+__pycache__/
+.cache/
+dist/
+kindel.egg-info/
