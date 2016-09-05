@@ -1,4 +1,4 @@
-import sys
+from collections import defaultdict
 
 import tqdm
 import simplesam
@@ -6,8 +6,6 @@ import simplesam
 from Bio import SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
-
-from collections import defaultdict
 
 
 def parse_records(bam_path):
@@ -104,20 +102,8 @@ def bam_to_consensus_seqrecord(bam_path, threshold_weight=0.5, min_depth=1):
     return consensus_record
 
 
-def bam_to_consensus_fasta(bam_path, fasta_path=sys.stdout, threshold_weight=0.5, min_depth=1):
+def bam_to_consensus_fasta(bam_path, threshold_weight=0.5, min_depth=1):
     weights, insertions, deletions, ref_name = parse_records(bam_path)
     consensus, changes = consensus_sequence(weights, insertions, deletions, threshold_weight, min_depth)
     consensus_record = consensus_seqrecord(consensus, ref_name)
-    SeqIO.write(consensus_record, fasta_path, format='fasta')
-
-
-if __name__ == '__main__':
-
-    bam_path = sys.argv[1]
-    threshold_weight = 0.5
-    min_depth = 1
-    weights, insertions, deletions, ref_name = parse_records(bam_path)
-    consensus, changes = consensus_sequence(weights, insertions, deletions, threshold_weight, min_depth)
-    consensus_record = consensus_seqrecord(consensus, ref_name)
-    SeqIO.write(consensus_record, sys.stdout, format='fasta')
-    print(report(weights, changes, threshold_weight, min_depth), file=sys.stderr, end='')
+    return consensus_record.format('fasta')
