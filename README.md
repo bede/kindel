@@ -7,7 +7,7 @@ Existing open source consensus calling approaches are complicated and typically 
 ```
 pip3 install kindel
 ```
-Dependencies: `simplesam`, `biopython` and `samtools` (for BAM input)
+Dependencies: `simplesam`, `biopython`, `argh` and `samtools` (for BAM input)
 
 ## Usage
 ### Command line
