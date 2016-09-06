@@ -1,9 +1,9 @@
-from collections import defaultdict
+import collections
 
+import argh
 import tqdm
 import simplesam
 
-from Bio import SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
@@ -13,36 +13,30 @@ def parse_records(bam_path):
         records = simplesam.Reader(bam_fh)
         first_sq = list(records.header['@SQ'].values())[0] if '@SQ' in records.header else None
         ref_name = list(list(records.header.values())[0].keys())[0].replace('SN:','') if first_sq else 'aln'
-        ref_len = int(next(iter(first_sq)).replace('LN:',''))+3 if first_sq else 100000
+        ref_len = int(next(iter(first_sq)).replace('LN:','')) if first_sq else 100000
         weights = [{'A':0,'T':0,'G':0,'C':0,'N':0} for p in range(ref_len)]
-        insertions = [defaultdict(int) for p in range(ref_len)]
+        insertions = [collections.defaultdict(int) for p in range(ref_len)]
         deletions = [0] * ref_len
         for i, record in tqdm.tqdm(enumerate(records)):
             q_pos = 0 
-            r_pos = record.pos-1
-            first_iteration = True
+            r_pos = record.pos-1 # Use zero-based coordinates
             for cigarette in record.cigars:
                 length, operation = cigarette
                 if operation == 'M':
                     for pos in range(length):
-                        q_nt = record.seq[q_pos]
+                        q_nt = record.seq[q_pos].upper()
                         weights[r_pos][q_nt] += 1
                         r_pos += 1
                         q_pos += 1
                 elif operation == 'I':
-                    nts = record.seq[q_pos:q_pos+length]
+                    nts = record.seq[q_pos:q_pos+length].upper()
                     insertions[r_pos][nts] += 1
                     q_pos += length
                 elif operation == 'D':
                     deletions[r_pos] += 1
                     r_pos += length
                 elif operation == 'S':
-                    if first_iteration:
-                        r_pos += length
                         q_pos += length
-                    else:
-                        q_pos += length
-                first_iteration = False
     return weights, insertions, deletions, ref_name
 
 
@@ -102,8 +96,13 @@ def bam_to_consensus_seqrecord(bam_path, threshold_weight=0.5, min_depth=1):
     return consensus_record
 
 
-def bam_to_consensus_fasta(bam_path, threshold_weight=0.5, min_depth=1):
+def bam_to_consensus_fasta(bam_path: 'path to SAM/BAM file',
+                           threshold_weight: 'consensus threshold weight'=0.5,
+                           min_depth: 'substitute Ns at coverage depths beneath this value'=1):
     weights, insertions, deletions, ref_name = parse_records(bam_path)
     consensus, changes = consensus_sequence(weights, insertions, deletions, threshold_weight, min_depth)
     consensus_record = consensus_seqrecord(consensus, ref_name)
     return consensus_record.format('fasta')
+
+if __name__ == '__main__':
+    argh.dispatch_command(bam_to_consensus_fasta)

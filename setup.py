@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(name='kindel',
-      version='0.1.3',
+      version='0.1.4',
       description='Indel-aware offline consensus calling for DNA alignments in SAM/BAM format',
       url='https://github.com/bede/kindel',
       author='Bede Constantinides',
