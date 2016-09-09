@@ -17,10 +17,12 @@ def parse_records(bam_path):
         weights = [{'A':0,'T':0,'G':0,'C':0,'N':0} for p in range(ref_len)]
         insertions = [collections.defaultdict(int) for p in range(ref_len)]
         deletions = [0] * ref_len
-        for i, record in tqdm.tqdm(enumerate(records)):
+        l_clip_starts = [0] * (ref_len+1)
+        r_clip_starts = [0] * (ref_len+1)
+        for record in tqdm.tqdm(records):
             q_pos = 0 
             r_pos = record.pos-1 # Use zero-based coordinates
-            for cigarette in record.cigars:
+            for i, cigarette in enumerate(record.cigars):
                 length, operation = cigarette
                 if operation == 'M':
                     for pos in range(length):
@@ -36,8 +38,22 @@ def parse_records(bam_path):
                     deletions[r_pos] += 1
                     r_pos += length
                 elif operation == 'S':
-                        q_pos += length
-    return weights, insertions, deletions, ref_name
+                    if i == 1:
+                        l_clip_starts[r_pos] += 1
+                    else:
+                        r_clip_starts[r_pos] += 1
+                    q_pos += length
+    return ref_name, weights, insertions, deletions, l_clip_starts, r_clip_starts
+
+
+def find_clipped_indels(weights, l_clip_starts, r_clip_starts, threshold_weight):
+    coverage = [sum(weight.values()) for weight in weights]
+    for i, (c, l, r) in enumerate(zip(coverage, l_clip_starts, r_clip_starts)):
+        threshold_weight_freq = c * threshold_weight
+        if l > threshold_weight_freq and i:
+            print('left', str(i))
+        if r > threshold_weight_freq and i:
+            print('right', str(i))
 
 
 def consensus_sequence(weights, insertions, deletions, threshold_weight, min_depth):
@@ -90,7 +106,8 @@ def report(weights, changes, threshold_weight, min_depth):
 
 
 def bam_to_consensus_seqrecord(bam_path, threshold_weight=0.5, min_depth=1):
-    weights, insertions, deletions, ref_name = parse_records(bam_path)
+    ref_name, weights, insertions, deletions, l_clip_starts, r_clip_starts = parse_records(bam_path)
+    find_clipped_indels(weights, l_clip_starts, r_clip_starts, threshold_weight)
     consensus, changes = consensus_sequence(weights, insertions, deletions, threshold_weight, min_depth)
     consensus_record = consensus_seqrecord(consensus, ref_name)
     return consensus_record
@@ -99,10 +116,9 @@ def bam_to_consensus_seqrecord(bam_path, threshold_weight=0.5, min_depth=1):
 def bam_to_consensus_fasta(bam_path: 'path to SAM/BAM file',
                            threshold_weight: 'consensus threshold weight'=0.5,
                            min_depth: 'substitute Ns at coverage depths beneath this value'=1):
-    weights, insertions, deletions, ref_name = parse_records(bam_path)
-    consensus, changes = consensus_sequence(weights, insertions, deletions, threshold_weight, min_depth)
-    consensus_record = consensus_seqrecord(consensus, ref_name)
-    return consensus_record.format('fasta')
+    consensus_fasta = bam_to_consensus_seqrecord(bam_path, threshold_weight, min_depth).format('fasta')
+    return consensus_fasta
+
 
 if __name__ == '__main__':
     argh.dispatch_command(bam_to_consensus_fasta)
