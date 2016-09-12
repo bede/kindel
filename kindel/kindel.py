@@ -15,10 +15,10 @@ def parse_records(bam_path):
         ref_name = list(list(records.header.values())[0].keys())[0].replace('SN:','') if first_sq else 'aln'
         ref_len = int(next(iter(first_sq)).replace('LN:','')) if first_sq else 100000
         weights = [{'A':0,'T':0,'G':0,'C':0,'N':0} for p in range(ref_len)]
+        clip_weights = [{'A':0,'T':0,'G':0,'C':0,'N':0} for p in range(ref_len)]
         insertions = [collections.defaultdict(int) for p in range(ref_len)]
         deletions = [0] * ref_len
-        l_clip_starts = [0] * (ref_len+1)
-        r_clip_starts = [0] * (ref_len+1)
+        clip_starts = [[0] * (ref_len+1), [0] * (ref_len+1)] # Genome length lists for left- and right-clipped seqs
         for record in tqdm.tqdm(records):
             q_pos = 0 
             r_pos = record.pos-1 # Use zero-based coordinates
@@ -38,28 +38,45 @@ def parse_records(bam_path):
                     deletions[r_pos] += 1
                     r_pos += length
                 elif operation == 'S':
-                    if i == 1:
-                        l_clip_starts[r_pos] += 1
+                    if i == 0:
+                        clip_starts[0][r_pos] += 1 # Count left-clipped start position
                     else:
-                        r_clip_starts[r_pos] += 1
+                        # print(clip_starts)
+                        # print('\n', r_pos, length, record.qname)
+                        clip_starts[1][r_pos] += 1 # Count right-clipped start position
+                        for pos in range(length):
+                            # print(q_pos, r_pos)
+                            q_nt = record.seq[q_pos].upper()
+                            if r_pos < ref_len:
+                                clip_weights[r_pos][q_nt] += 1
+                                r_pos += 1
+                                q_pos += 1
                     q_pos += length
-    return ref_name, weights, insertions, deletions, l_clip_starts, r_clip_starts
+    return ref_name, weights, insertions, deletions, clip_starts, clip_weights
 
 
-def find_clipped_indels(weights, l_clip_starts, r_clip_starts, threshold_weight):
+def clipping_boundaries(weights, clip_starts, threshold_weight, min_depth):
+    clip_boundaries = {'l': [], 'r': []}
     coverage = [sum(weight.values()) for weight in weights]
-    for i, (c, l, r) in enumerate(zip(coverage, l_clip_starts, r_clip_starts)):
-        threshold_weight_freq = c * threshold_weight
+    for i, (c, l, r) in enumerate(zip(coverage, clip_starts[0], clip_starts[1])):
+        threshold_weight_freq = max(c * threshold_weight, min_depth)
         if l > threshold_weight_freq and i:
-            print('left', str(i))
+            clip_boundaries['l'].append(i)
         if r > threshold_weight_freq and i:
-            print('right', str(i))
+            clip_boundaries['r'].append(i)
+    return clip_boundaries
 
 
-def consensus_sequence(weights, insertions, deletions, threshold_weight, min_depth):
+def consensus_sequence(weights, insertions, deletions, clip_boundaries, threshold_weight, min_depth):
     consensus = ''
     changes = [None] * len(weights)
     for pos, weight in enumerate(weights):
+
+
+        if pos in clip_boundaries[1]:
+            pass # Do reconciliation based on clip_weights 
+
+
         ins_freq = sum(insertions[pos].values()) if insertions[pos] else 0
         del_freq = deletions[pos]
         coverage = sum(weight.values())
@@ -106,9 +123,13 @@ def report(weights, changes, threshold_weight, min_depth):
 
 
 def bam_to_consensus_seqrecord(bam_path, threshold_weight=0.5, min_depth=1):
-    ref_name, weights, insertions, deletions, l_clip_starts, r_clip_starts = parse_records(bam_path)
-    find_clipped_indels(weights, l_clip_starts, r_clip_starts, threshold_weight)
-    consensus, changes = consensus_sequence(weights, insertions, deletions, threshold_weight, min_depth)
+    ref_name, weights, insertions, deletions, clip_starts, clip_weights = parse_records(bam_path)
+    print('\n'.join([str(x) for x in clip_weights]))
+    clip_boundaries = clipping_boundaries(weights, clip_starts,
+                                          threshold_weight, min_depth)
+    print('clip_boundaries')
+    print(clip_boundaries)
+    consensus, changes = consensus_sequence(weights, insertions, deletions, clip_boundaries, threshold_weight, min_depth)
     consensus_record = consensus_seqrecord(consensus, ref_name)
     return consensus_record
 
