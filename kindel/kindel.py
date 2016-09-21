@@ -146,7 +146,7 @@ def build_report(weights, changes, gaps, gap_consensuses, threshold_weight, min_
     insertion_sites = []
     deletion_sites = []
     gaps_fmt = ['-'.join([str(g) for g in gap]) for gap in gaps]
-    gap_consensuses_fmt = ', '.join(gap_consensuses) if gap_consensuses else None
+    gap_consensuses_fmt = ', '.join(gap_consensuses) if gap_consensuses else ''
     for pos, change in enumerate(changes):
         if change == 'N':
             ambiguous_sites.append(str(pos))
