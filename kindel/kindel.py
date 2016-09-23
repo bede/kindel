@@ -1,3 +1,4 @@
+import os
 import sys
 import collections
 
@@ -12,7 +13,7 @@ def parse_records(bam_path):
     with open(bam_path, 'r') as bam_fh:
         records = simplesam.Reader(bam_fh)
         first_sq = list(records.header['@SQ'].values())[0] if '@SQ' in records.header else None
-        ref_name = list(list(records.header.values())[0].keys())[0].replace('SN:','') if first_sq else 'aln'
+        ref_name = os.path.splitext(os.path.basename(bam_path))[0]
         ref_len = int(next(iter(first_sq)).replace('LN:','')) if first_sq else 100000
         weights = [{'A':0,'T':0,'G':0,'C':0,'N':0} for p in range(ref_len)]
         clip_weights = [{'A':0,'T':0,'G':0,'C':0,'N':0} for p in range(ref_len)]
