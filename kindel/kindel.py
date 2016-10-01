@@ -134,6 +134,8 @@ def consensus_sequence(weights, clip_weights, insertions, deletions, gaps, gap_c
             top_ins, top_ins_freq = max(insertions[pos].items(), key=lambda x:x[1])
             consensus += top_ins
             changes[pos] = 'I'
+    if trim_ends:
+        consensus = consensus.strip('N')
     return consensus, changes
 
 
@@ -143,7 +145,6 @@ def consensus_seqrecord(consensus, ref_name):
 
 def build_report(weights, changes, gaps, gap_consensuses, bam_path, fix_gaps, trim_ends,
                  threshold_weight, min_depth, bridge_k):
-    print(changes)
     coverage = [sum(weight.values()) for weight in weights] 
     ambiguous_sites = []
     insertion_sites = []
@@ -176,11 +177,11 @@ def build_report(weights, changes, gaps, gap_consensuses, bam_path, fix_gaps, tr
 
 
 def bam_to_consensus_seqrecord(bam_path,
+                               fix_gaps=False,
+                               trim_ends=False,
                                threshold_weight=0.5,
                                min_depth=2,
-                               fix_gaps=False,
-                               bridge_k=7,
-                               trim_ends=False):
+                               bridge_k=7):
     ref_name, weights, insertions, deletions, clip_starts, clip_weights = parse_records(bam_path)
     if fix_gaps:
         gaps = find_gaps(weights, clip_starts, threshold_weight, min_depth)
@@ -197,15 +198,16 @@ def bam_to_consensus_seqrecord(bam_path,
 
 
 def bam_to_consensus_fasta(bam_path: 'path to SAM/BAM file',
+                           fix_gaps: 'attempt to reconcile reference at soft-clip boundaries'=False,
+                           trim_ends: 'trim ambiguous nucleotides (Ns) from sequence ends'=False,
                            threshold_weight: 'consensus threshold weight'=0.5,
                            min_depth: 'substitute Ns at coverage depths beneath this value'=2,
-                           fix_gaps: 'attempt to reconcile reference at soft-clip boundaries'=False,
-                           bridge_k: 'match length required to bridge soft-clipped gaps'=7,
-                           trim_ends: 'trim ambiguous nucleotides (Ns) from sequence ends'=False):
+                           bridge_k: 'match length required to bridge soft-clipped gaps'=7):
     consensus_record, report_fmt = bam_to_consensus_seqrecord(bam_path,
+                                                              fix_gaps,
+                                                              trim_ends,
                                                               threshold_weight,
                                                               min_depth,
-                                                              fix_gaps,
                                                               bridge_k)
     print(report_fmt, file=sys.stderr)
     return consensus_record.format('fasta')
