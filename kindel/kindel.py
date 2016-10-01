@@ -106,7 +106,7 @@ def reconcile_gaps(gaps, weights, clip_weights, min_depth, bridge_k):
 
 
 def consensus_sequence(weights, clip_weights, insertions, deletions, gaps, gap_consensuses,
-                       threshold_weight, min_depth, fix_gaps):
+                       fix_gaps, trim_ends, threshold_weight, min_depth):
     consensus = ''
     changes = [None] * len(weights)
     gap_starts = [g[0] for g in gaps] if fix_gaps else []
@@ -141,7 +141,9 @@ def consensus_seqrecord(consensus, ref_name):
     return SeqRecord(Seq(consensus), id=ref_name + '_cns', description='')
 
 
-def build_report(weights, changes, gaps, gap_consensuses, threshold_weight, min_depth):
+def build_report(weights, changes, gaps, gap_consensuses, bam_path, fix_gaps, trim_ends,
+                 threshold_weight, min_depth, bridge_k):
+    print(changes)
     coverage = [sum(weight.values()) for weight in weights] 
     ambiguous_sites = []
     insertion_sites = []
@@ -156,8 +158,13 @@ def build_report(weights, changes, gaps, gap_consensuses, threshold_weight, min_
         elif change == 'D':
             ambiguous_sites.append(str(pos))
     report = '========================= REPORT ===========================\n'
-    report += 'consensus weight: {}\n'.format(threshold_weight)
-    report += 'minimum depth: {}\n'.format(min_depth)
+    report += 'options:\n'
+    report += '- bam_path: {}\n'.format(bam_path)
+    report += '- fix_gaps: {}\n'.format(fix_gaps)
+    report += '- trim_ends: {}\n'.format(trim_ends)
+    report += '- threshold_weight: {}\n'.format(threshold_weight)
+    report += '- min_depth: {}\n'.format(min_depth)
+    report += '- bridge_k: {}\n'.format(bridge_k)
     report += 'min,max observed depth: {},{}\n'.format(min(coverage), max(coverage))
     report += 'ambiguous sites: {}\n'.format(', '.join(ambiguous_sites))
     report += 'insertion sites: {}\n'.format(', '.join(insertion_sites))
@@ -172,16 +179,19 @@ def bam_to_consensus_seqrecord(bam_path,
                                threshold_weight=0.5,
                                min_depth=2,
                                fix_gaps=False,
-                               bridge_k=7):
+                               bridge_k=7,
+                               trim_ends=False):
     ref_name, weights, insertions, deletions, clip_starts, clip_weights = parse_records(bam_path)
     if fix_gaps:
         gaps = find_gaps(weights, clip_starts, threshold_weight, min_depth)
         gap_consensuses = reconcile_gaps(gaps, weights, clip_weights, min_depth, bridge_k)
     else: gaps, gap_consensuses = None, None
     consensus, changes = consensus_sequence(weights, clip_weights, insertions, deletions, gaps,
-                                            gap_consensuses, threshold_weight, min_depth, fix_gaps)
+                                            gap_consensuses, fix_gaps, trim_ends, threshold_weight,
+                                            min_depth)
     consensus_record = consensus_seqrecord(consensus, ref_name)
-    report_fmt = build_report(weights, changes, gaps, gap_consensuses, threshold_weight, min_depth)
+    report_fmt = build_report(weights, changes, gaps, gap_consensuses, bam_path, fix_gaps,
+                              trim_ends, threshold_weight, min_depth, bridge_k)
 
     return consensus_record, report_fmt
 
@@ -190,7 +200,8 @@ def bam_to_consensus_fasta(bam_path: 'path to SAM/BAM file',
                            threshold_weight: 'consensus threshold weight'=0.5,
                            min_depth: 'substitute Ns at coverage depths beneath this value'=2,
                            fix_gaps: 'attempt to reconcile reference at soft-clip boundaries'=False,
-                           bridge_k: 'match length required to bridge soft-clipped gaps'=7):
+                           bridge_k: 'match length required to bridge soft-clipped gaps'=7,
+                           trim_ends: 'trim ambiguous nucleotides (Ns) from sequence ends'=False):
     consensus_record, report_fmt = bam_to_consensus_seqrecord(bam_path,
                                                               threshold_weight,
                                                               min_depth,
