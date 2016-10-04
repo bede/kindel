@@ -1,3 +1,5 @@
+import sys
+
 import kindel
 
 import pandas as pd
@@ -41,7 +43,8 @@ def plot(coverage, l_clip_starts, r_clip_starts):
 
 
 if __name__ == '__main__':
-    ref_name, weights, insertions, deletions, clip_starts, clip_weights = kindel.parse_records('tests/HCV_AVU_AB_1.12345.R12.sub.bam')
+    print(sys.argv[1])
+    ref_name, weights, insertions, deletions, clip_starts, clip_weights = kindel.parse_records(sys.argv[1])
     cov = coverage(weights)
     cov_smoothed = pd.Series(cov).rolling(window=10).mean().tolist()
     # print(clip_starts)
