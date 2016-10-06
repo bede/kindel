@@ -30,6 +30,8 @@ def parse_records(bam_path):
                     for pos in range(length):
                         q_nt = record.seq[q_pos].upper()
                         weights[r_pos][q_nt] += 1
+                        if r_pos == 1456:
+                            print(record.qname)
                         r_pos += 1
                         q_pos += 1
                 elif operation == 'I':
@@ -41,15 +43,15 @@ def parse_records(bam_path):
                     r_pos += length
                 elif operation == 'S':
                     if i == 0:
+                        r_pos_s = r_pos
                         clip_starts[0][r_pos] += 1 # Count left-clipped start position
                         for pos in reversed(range(length)): # Count backwards
                             q_nt = record.seq[pos].upper()
-                            if r_pos >= 0:
-                                l_clip_weights[r_pos][q_nt] += 1
-                                r_pos -= 1
+                            if r_pos_s >= 0:
+                                l_clip_weights[r_pos_s][q_nt] += 1
+                                r_pos_s -= 1
                                 q_pos -= 1
                         # print(record.qname, record.seq[length-3]+record.seq[length-2]+record.seq[length-1]+record.seq[length]+record.seq[length+1]+record.seq[length+2])
-
                     else:
                         clip_starts[1][r_pos] += 1 # Count right-clipped start position
                         for pos in range(length): # Count forwards
@@ -61,23 +63,23 @@ def parse_records(bam_path):
                     # q_pos += length
         # for i, w in enumerate(l_clip_weights):
         #     print(max(w, key=lambda k: w[k]), end='')
-
+        for i, (lc, rc) in enumerate(zip(clip_starts[0], clip_starts[1])):
+            print(i, lc, rc)  
     return ref_name, weights, insertions, deletions, clip_starts, r_clip_weights
 
 
 def find_gaps(weights, clip_starts, threshold_weight, min_depth):
     # Returns list of soft-clipped alignment gaps as tuples in format [(start_pos, end_pos)]
     gaps = []
-    weights_acgt = [{nt: weights[i][nt] for nt in list('ACGT')} for i in range(len(weights))]
-    coverage = [sum(weight.values()) for weight in weights_acgt]
-    for i, (c, l, r) in enumerate(zip(coverage, clip_starts[0], clip_starts[1])):
-        gap_open = False
-        threshold_weight_freq = max(c * threshold_weight, min_depth)
-        if r > threshold_weight_freq and i:
+    coverage = [sum({nt:w[nt] for nt in list('ACGT')}.values()) for w in weights]
+    gap_open = False
+    for i, (cov, l_clip, r_clip) in enumerate(zip(coverage, clip_starts[0], clip_starts[1])):
+        threshold_weight_freq = max(cov * threshold_weight, min_depth)
+        if r_clip > threshold_weight_freq and i:
             gap_start = i
             gap_open = True
-        if gap_open and l > threshold_weight_freq and i:
-            gap_end = i
+        if gap_open and l_clip > threshold_weight_freq and i:
+            gap_end = i-1
             gaps.append((gap_start, gap_end))
             gap_open = False
     return gaps
@@ -181,7 +183,7 @@ def build_report(weights, changes, gaps, gap_consensuses, bam_path, fix_gaps, tr
     ambiguous_sites = []
     insertion_sites = []
     deletion_sites = []
-    gaps_fmt = ['-'.join([str(g) for g in gap]) for gap in gaps] if gaps else []
+    gaps_fmt = ['-'.join([str(g+1) for g in gap]) for gap in gaps] if gaps else []
     gap_consensuses_fmt = ', '.join(gap_consensuses) if gap_consensuses else ''
     for pos, change in enumerate(changes):
         if change == 'N':
