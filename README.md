@@ -10,7 +10,9 @@ Existing consensus calling approaches are complicated and often involve a varian
 ```
 pip3 install kindel
 ```
-Dependencies should automatically installed, except for Samtools which is needed for BAM input.
+Dependencies should automatically installed, except for Samtools which is needed for BAM input.  
+Otherwise install using a tagged release as master may well be broken.
+
 
 ## Usage
 ### Command line
@@ -29,16 +31,17 @@ positional arguments:
 
 optional arguments:
   -h, --help            show this help message and exit
-  -t THRESHOLD_WEIGHT, --threshold-weight THRESHOLD_WEIGHT
+  -f, --fix-gaps        attempt to reconcile reference at soft-clip boundaries
+                        (default: False)
+  --trim-ends           trim ambiguous nucleotides (Ns) from sequence ends
+                        (default: False)
+  --threshold-weight THRESHOLD_WEIGHT
                         consensus threshold weight (default: 0.5)
   -m MIN_DEPTH, --min-depth MIN_DEPTH
                         substitute Ns at coverage depths beneath this value
                         (default: 2)
-  -f, --fix-gaps        attempt to reconcile reference at soft-clip boundaries
-                        (default: False)
   --bridge-k BRIDGE_K   match length required to bridge soft-clipped gaps
                         (default: 7)
-
 ```
 
 ### Python3
@@ -56,3 +59,9 @@ Please let me know if you run into problems by opening a GitHub issue, [tweeting
 - SAM/BAM files must contain an SQ header line containing the reference sequence length.
 - In current form `--fix-gaps` can require multiple runs to converge on the optimal consensus
 - Slow (10-20k records/s)
+
+## Features
+- Consensus gap closure using soft-clipped alignment context ✓* *work in progress*
+  - left-to-right gap closure ✓
+  - right-to-left gap closure ✗
+  - Meet-in-the-middle gap closure ✗
