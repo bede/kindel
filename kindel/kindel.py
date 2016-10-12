@@ -20,8 +20,8 @@ from Bio.SeqRecord import SeqRecord
 
 def parse_alignment(bam_path):
     '''
-    Iterate over records, returning genome length lists of base frequency dicts, indels, soft-clip
-    coords and consensus weights of soft-clipped sequences.
+    Iterate over records, returning lists of base frequency dicts, indels and soft clpping info
+
     '''
     with open(bam_path, 'r') as bam_fh:
         records = simplesam.Reader(bam_fh)
@@ -41,9 +41,13 @@ def parse_alignment(bam_path):
             for i, cigarette in enumerate(record.cigars):
                 length, operation = cigarette
                 if operation == 'M':
-                    for pos in range(length):
+                    for _ in range(length):
                         q_nt = record.seq[q_pos].upper()
+                        # print(r_pos)
                         weights[r_pos][q_nt] += 1
+                        # if r_pos == 1504 and q_nt == 'G':
+                        #     print('>' + record.qname)
+                        #     print(record.seq)
                         r_pos += 1
                         q_pos += 1
                 elif operation == 'I':
@@ -54,25 +58,27 @@ def parse_alignment(bam_path):
                     deletions[r_pos] += 1
                     r_pos += length
                 elif operation == 'S':
-                    if i == 0:
-                        r_pos_s = r_pos # Fork r_pos since we'll be counting backwards
-                        clip_ends[r_pos] += 1 # Count right-of-gap / l-clipped start position
-                        for pos in reversed(range(length)): # Iterate RTL along reference
-                            q_nt = record.seq[pos].upper()
-                            if r_pos_s >= 0:
-                                clip_e_weights[r_pos_s][q_nt] += 1
-                                r_pos_s -= 1
-                                q_pos -= 1
-                    else:
-                        clip_starts[r_pos] += 1 # Count left-of-gap / r-clipped start position
-                        for pos in range(length): # Count forwards
+                    if i == 0: # Count right-of-gap / l-clipped start positions (e.g. start of ref)
+                        clip_ends[r_pos-1] += 1
+                        for gap_i in range(length):
+                            q_nt = record.seq[gap_i].upper()
+                            rel_r_pos = r_pos - length + gap_i
+                            if rel_r_pos >= 0:
+                                clip_e_weights[rel_r_pos][q_nt] += 1
+                        q_pos += length
+                    else: # Count left-of-gap / r-clipped start position (e.g. end of ref)
+                        clip_starts[r_pos] += 1 
+                        for pos in range(length):
                             q_nt = record.seq[q_pos].upper()
                             if r_pos < ref_len:
                                 clip_s_weights[r_pos][q_nt] += 1
                                 r_pos += 1
                                 q_pos += 1
-        # for i, (lc, rc) in enumerate(zip(clip_starts[0], clip_starts[1])):
+        # for i, (lc, rc) in enumerate(zip(clip_starts, clip_ends)):
         #     print(i, lc, rc)  
+        # for i, (csw, cew) in enumerate(zip(clip_s_weights, clip_e_weights)):
+        #     # print(i, csw, cew)
+        #     print(i, *max(csw.items(), key=lambda x:x[1]), *max(cew.items(), key=lambda x:x[1]))
     return (ref_name, weights, insertions, deletions, clip_starts, clip_ends, clip_s_weights,
            clip_e_weights)
 
@@ -90,7 +96,7 @@ def find_gaps(weights, clip_starts, clip_ends, threshold_weight, min_depth):
             gap_start = i
             gap_open = True
         if gap_open and clip_e > threshold_weight_freq and i:
-            gap_end = i-1
+            gap_end = i
             gaps.append((gap_start, gap_end))
             gap_open = False
     return gaps
@@ -128,6 +134,7 @@ def e_overhang_consensus(clip_e_weights, start_pos, min_depth):
             break
     consensus_overhang = rev_consensus_overhang[::-1]
     print('e_overhang_consensus', consensus_overhang)
+    print(len(consensus_overhang))
     return consensus_overhang
 
 
@@ -136,7 +143,7 @@ def s_flanking_seq(start_pos, weights, min_depth, k):
     Returns consensus sequence (string) flanking LHS of soft-clipped gaps
     '''
     flank_seq = ''
-    for pos in reversed(range(start_pos, start_pos+k)):
+    for pos in range(start_pos-k, start_pos):
         heaviest_base, heaviest_weight = max(weights[pos].items(), key=lambda x:x[1])
         if heaviest_weight >= min_depth:
             flank_seq += heaviest_base
@@ -149,7 +156,7 @@ def e_flanking_seq(end_pos, weights, min_depth, k):
     Returns consensus sequence (string) flanking RHS of soft-clipped gaps
     '''
     flank_seq = ''
-    for pos in range(end_pos, end_pos+k):
+    for pos in range(end_pos+1, end_pos+k+1):
         heaviest_base, heaviest_weight = max(weights[pos].items(), key=lambda x:x[1])
         if heaviest_weight >= min_depth:
             flank_seq += heaviest_base
@@ -157,19 +164,53 @@ def e_flanking_seq(end_pos, weights, min_depth, k):
     return flank_seq
 
 
-def reconcile_gaps(gaps, weights, clip_s_weights, clip_e_weights, min_depth, bridge_k):
+def reconcile_gaps(gaps, weights, clip_s_weights, clip_e_weights, min_depth, closure_k):
     '''
     Returns list of consensus strings corresponding to gap coordinates generated by find_gaps()
     '''
+
+    def longest_common_substring(s1, s2):
+        '''
+        https://en.wikibooks.org/wiki/Algorithm_Implementation/Strings/Longest_common_substring#Python_3
+        '''
+        m = [[0] * (1 + len(s2)) for i in range(1 + len(s1))]
+        longest, x_longest = 0, 0
+        for x in range(1, 1 + len(s1)):
+            for y in range(1, 1 + len(s2)):
+                if s1[x - 1] == s2[y - 1]:
+                    m[x][y] = m[x - 1][y - 1] + 1
+                    if m[x][y] > longest:
+                        longest = m[x][y]
+                        x_longest = x
+                else:
+                    m[x][y] = 0
+        return s1[x_longest - longest: x_longest]
+
+    def close_by_lcs(l_seq, r_seq):
+        lcs = longest_common_substring(l_seq, r_seq)
+        l_trim = l_seq[:l_seq.find(lcs)]
+        r_trim = r_seq[r_seq.find(lcs)+len(lcs):]
+        return l_trim + lcs + r_trim
+
+
     gap_consensuses = []
     for gap in gaps:
         s_overhang_seq = s_overhang_consensus(clip_s_weights, gap[0], min_depth)
         e_overhang_seq = e_overhang_consensus(clip_e_weights, gap[1], min_depth)
-        s_flank_seq = s_flanking_seq(gap[0], weights, min_depth, bridge_k)
-        e_flank_seq = e_flanking_seq(gap[1], weights, min_depth, bridge_k)
-        index = s_overhang_seq.find(e_flank_seq) # str.find() returns -1 in absence of match
-        gap_consensuses.append(s_overhang_seq[:index].lower() if index >= 0 else '')
-        # GAP CLOSURE HERE
+        s_flank_seq = s_flanking_seq(gap[0], weights, min_depth, closure_k)
+        e_flank_seq = e_flanking_seq(gap[1], weights, min_depth, closure_k)
+        if e_flank_seq in s_overhang_seq: # Close gap using right-clipped read consensus
+            i = s_overhang_seq.find(e_flank_seq) # str.find() returns -1 in absence of match
+            gap_consensus = s_overhang_seq[:i].lower()
+        elif s_flank_seq in e_overhang_seq: # Close gap using left-clipped read consensus
+            i = e_overhang_seq.find(s_flank_seq)
+            gap_consensus = s_overhang_seq[:i].lower()
+        elif len(lcs(s_overhang_seq, e_overhang_seq)) >= closure_k:
+            gap_consensus = close_by_lcs(s_overhang_seq, e_overhang_seq)
+        else:
+            print('Failed to close gap') # Stub... Needs tests
+            break
+        gap_consensuses.append(gap_consensus)
         # print(r_overhang, file=sys.stderr)
         # print(r_flank_seq, file=sys.stderr)
         # print(index, file=sys.stderr)
@@ -215,12 +256,14 @@ def consensus_seqrecord(consensus, ref_name):
 
 
 def build_report(weights, changes, gaps, gap_consensuses, bam_path, fix_gaps, trim_ends,
-                 threshold_weight, min_depth, bridge_k):
+                 threshold_weight, min_depth, closure_k):
     # weights_acgt = [{nt: weights[i][nt] for nt in list('ACGT')} for i in range(len(weights))]
     # coverage = [sum(weight.values()) for weight in weights_acgt]
     coverage = [sum({nt:w[nt] for nt in list('ACGT')}.values()) for w in weights]
     # for i, cov in enumerate(coverage):
     #     print(str(i), cov)
+    # for i, (cov, w) in enumerate(zip(coverage, weights)):
+    #     print(str(i), cov, 'A:'+str(w['A']), 'C:'+str(w['C']), 'G:'+str(w['G']), 'T:'+str(w['T']), 'N:'+str(w['N']))
     # print(coverage)
     ambiguous_sites = []
     insertion_sites = []
@@ -241,7 +284,7 @@ def build_report(weights, changes, gaps, gap_consensuses, bam_path, fix_gaps, tr
     report += '- trim_ends: {}\n'.format(trim_ends)
     report += '- threshold_weight: {}\n'.format(threshold_weight)
     report += '- min_depth: {}\n'.format(min_depth)
-    report += '- bridge_k: {}\n'.format(bridge_k)
+    report += '- closure_k: {}\n'.format(closure_k)
     report += 'min,max observed depth: {},{}\n'.format(min(coverage), max(coverage))
     report += 'ambiguous sites: {}\n'.format(', '.join(ambiguous_sites))
     report += 'insertion sites: {}\n'.format(', '.join(insertion_sites))
@@ -257,15 +300,18 @@ def bam_to_consensus_seqrecord(bam_path,
                                trim_ends=False,
                                threshold_weight=0.5,
                                min_depth=2,
-                               bridge_k=7):
+                               closure_k=7):
     
     (ref_name, weights, insertions, deletions, clip_starts, clip_ends, clip_s_weights,
      clip_e_weights) = parse_alignment(bam_path)
 
     if fix_gaps:
-        gaps = find_gaps(weights, clip_starts, clip_ends, threshold_weight, min_depth)
+        # gaps = find_gaps(weights, clip_starts, clip_ends, threshold_weight, min_depth)
+        # print('gaps')
+        # print(gaps)
+        gaps = [(1430, 1500)]
         gap_consensuses = reconcile_gaps(gaps, weights, clip_s_weights, clip_e_weights, min_depth,
-                                         bridge_k)
+                                         closure_k)
     else:
         gaps, gap_consensuses = None, None
     
@@ -276,7 +322,7 @@ def bam_to_consensus_seqrecord(bam_path,
     consensus_record = consensus_seqrecord(consensus, ref_name)
     
     report_fmt = build_report(weights, changes, gaps, gap_consensuses, bam_path, fix_gaps,
-                              trim_ends, threshold_weight, min_depth, bridge_k)
+                              trim_ends, threshold_weight, min_depth, closure_k)
 
     return consensus_record, report_fmt
 
@@ -286,10 +332,10 @@ def bam_to_consensus_fasta(bam_path: 'path to SAM/BAM file',
                            trim_ends: 'trim ambiguous nucleotides (Ns) from sequence ends'=False,
                            threshold_weight: 'consensus threshold weight'=0.5,
                            min_depth: 'substitute Ns at coverage depths beneath this value'=2,
-                           bridge_k: 'match length required to bridge soft-clipped gaps'=7):
+                           closure_k: 'match length required to close soft-clipped gaps'=7):
     consensus_record, report_fmt = bam_to_consensus_seqrecord(bam_path, fix_gaps, trim_ends,
                                                               threshold_weight, min_depth,
-                                                              bridge_k)
+                                                              closure_k)
     print(report_fmt, file=sys.stderr)
     return consensus_record.format('fasta')
 
