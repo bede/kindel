@@ -62,7 +62,7 @@ def parse_alignment(bam_path):
                     r_pos += length
                 elif operation == 'S':
                     if i == 0: # Count right-of-gap / l-clipped start positions (e.g. start of ref)
-                        clip_ends[r_pos-1] += 1
+                        clip_ends[r_pos] += 1
                         for gap_i in range(length):
                             q_nt = record.seq[gap_i].upper()
                             rel_r_pos = r_pos - length + gap_i
@@ -105,39 +105,46 @@ def find_gaps(weights, clip_starts, clip_ends, threshold_weight, min_depth):
     return gaps
 
 
-def s_overhang_consensus(clip_s_weights, start_pos, min_depth):
+def consensus(weight):
+    '''
+    Returns consensus base, corresponding weight and a flag indicating a tie for consensus
+    '''
+    tie = False
+    consensus_base, consensus_weight = max(weight.items(), key=lambda x:x[1])
+    weight_sans_consensus = {k:d for k, d in weight.items() if k != consensus_base }
+    if consensus_weight in weight_sans_consensus.values():
+        tie = True
+    return consensus_base, consensus_weight, tie
+
+
+def s_overhang_consensus(clip_s_weights, start_pos, min_depth, max_len=500):
     '''
     Returns consensus sequence (string) of clipped reads at specified position
     start_pos is the first position described by the CIGAR-S
     '''
     consensus_overhang = ''
-    max_overhang_len = 500 # Arbitrary figure greater than read length as safety net
-    for pos in range(start_pos, start_pos+max_overhang_len):
-        heaviest_base, heaviest_weight = max(clip_s_weights[pos].items(), key=lambda x:x[1])
-        if heaviest_weight >= min_depth:
-            consensus_overhang += heaviest_base
+    for pos in range(start_pos, start_pos+max_len):
+        consensus_base, consensus_weight, tie = consensus(clip_s_weights[pos])
+        if consensus_weight >= min_depth:
+            consensus_overhang += consensus_base
         else:
             break
-    # print('s_overhang_consensus', consensus_overhang)
     return consensus_overhang
 
 
-def e_overhang_consensus(clip_e_weights, start_pos, min_depth):
+def e_overhang_consensus(clip_e_weights, start_pos, min_depth, max_len=500):
     '''
     Returns consensus sequence (string) of clipped reads at specified position
     end_pos is the last position described by the CIGAR-S
     '''
     rev_consensus_overhang = ''
-    max_overhang_len = 500 # Arbitrary figure greater than read length as safety net
-    for pos in range(start_pos, start_pos-max_overhang_len, -1):
-        heaviest_base, heaviest_weight = max(clip_e_weights[pos].items(), key=lambda x:x[1])
-        if heaviest_weight >= min_depth:
-            rev_consensus_overhang += heaviest_base
+    for pos in range(start_pos, start_pos-max_len, -1):
+        consensus_base, consensus_weight, tie = consensus(clip_e_weights[pos])
+        if consensus_weight >= min_depth:
+            rev_consensus_overhang += consensus_base
         else:
             break
     consensus_overhang = rev_consensus_overhang[::-1]
-    # print('e_overhang_consensus', consensus_overhang)
-    # print(len(consensus_overhang))
     return consensus_overhang
 
 
@@ -147,10 +154,9 @@ def s_flanking_seq(start_pos, weights, min_depth, k):
     '''
     flank_seq = ''
     for pos in range(start_pos-k, start_pos):
-        heaviest_base, heaviest_weight = max(weights[pos].items(), key=lambda x:x[1])
-        if heaviest_weight >= min_depth:
-            flank_seq += heaviest_base
-    # print('s_flanking_seq', flank_seq)
+        consensus_base, consensus_weight, tie = consensus(weights[pos])
+        if consensus_weight >= min_depth:
+            flank_seq += consensus_base
     return flank_seq
 
 
@@ -160,42 +166,47 @@ def e_flanking_seq(end_pos, weights, min_depth, k):
     '''
     flank_seq = ''
     for pos in range(end_pos+1, end_pos+k+1):
-        heaviest_base, heaviest_weight = max(weights[pos].items(), key=lambda x:x[1])
-        if heaviest_weight >= min_depth:
-            flank_seq += heaviest_base
-    # print('e_flanking_seq', flank_seq)
+        consensus_base, consensus_weight, tie = consensus(weights[pos])
+        if consensus_weight >= min_depth:
+            flank_seq += consensus_base
+
     return flank_seq
+
+
+def lcs(s1, s2):
+    '''
+    Returns longest common substring
+    https://en.wikibooks.org/wiki/Algorithm_Implementation/Strings/Longest_common_substring
+    '''
+    m = [[0] * (1 + len(s2)) for i in range(1 + len(s1))]
+    longest, x_longest = 0, 0
+    for x in range(1, 1 + len(s1)):
+        for y in range(1, 1 + len(s2)):
+            if s1[x - 1] == s2[y - 1]:
+                m[x][y] = m[x - 1][y - 1] + 1
+                if m[x][y] > longest:
+                    longest = m[x][y]
+                    x_longest = x
+            else:
+                m[x][y] = 0
+    return s1[x_longest - longest: x_longest]
+
+
+def close_by_lcs(l_seq, r_seq):
+    '''
+    Returns sequence built from merged overlapping left- and right-clipped consensus sequences
+    '''
+    _lcs = lcs(l_seq, r_seq)
+    l_trim = l_seq[:l_seq.find(_lcs)]
+    r_trim = r_seq[r_seq.find(_lcs)+len(_lcs):]
+    return l_trim + _lcs + r_trim
 
 
 def reconcile_gaps(gaps, weights, clip_s_weights, clip_e_weights, min_depth, closure_k, uppercase):
     '''
-    Returns dict of consensus insertions between to gap coordinates generated by find_gaps()
+    Returns dict of consensus insertions between to gap coordinates from find_gaps()
     Dict keys are gap start positions (left of gap)
     '''
-
-    def longest_common_substring(s1, s2):
-        '''
-        https://en.wikibooks.org/wiki/Algorithm_Implementation/Strings/Longest_common_substring
-        '''
-        m = [[0] * (1 + len(s2)) for i in range(1 + len(s1))]
-        longest, x_longest = 0, 0
-        for x in range(1, 1 + len(s1)):
-            for y in range(1, 1 + len(s2)):
-                if s1[x - 1] == s2[y - 1]:
-                    m[x][y] = m[x - 1][y - 1] + 1
-                    if m[x][y] > longest:
-                        longest = m[x][y]
-                        x_longest = x
-                else:
-                    m[x][y] = 0
-        return s1[x_longest - longest: x_longest]
-
-    def close_by_lcs(l_seq, r_seq):
-        lcs = longest_common_substring(l_seq, r_seq)
-        l_trim = l_seq[:l_seq.find(lcs)]
-        r_trim = r_seq[r_seq.find(lcs)+len(lcs):]
-        return l_trim + lcs + r_trim
-
     gap_consensuses = {}
     for gap in gaps:
         s_overhang_seq = s_overhang_consensus(clip_s_weights, gap[0], min_depth)
@@ -208,7 +219,7 @@ def reconcile_gaps(gaps, weights, clip_s_weights, clip_e_weights, min_depth, clo
         elif s_flank_seq in e_overhang_seq: # Close gap using left-clipped read consensus
             i = e_overhang_seq.find(s_flank_seq)
             gap_consensus = e_overhang_seq[i:]
-        elif len(longest_common_substring(s_overhang_seq, e_overhang_seq)) >= closure_k:
+        elif len(lcs(s_overhang_seq, e_overhang_seq)) >= closure_k:
             gap_consensus = close_by_lcs(s_overhang_seq, e_overhang_seq)
         else:
             print('Failed to close gap') # Stub... Needs tests
@@ -217,9 +228,6 @@ def reconcile_gaps(gaps, weights, clip_s_weights, clip_e_weights, min_depth, clo
             gap_consensuses[gap[0]] = gap_consensus
         else:
             gap_consensuses[gap[0]] = gap_consensus.lower()
-        # print(r_overhang, file=sys.stderr)
-        # print(r_flank_seq, file=sys.stderr)
-        # print(index, file=sys.stderr)
     return gap_consensuses
 
 
@@ -316,8 +324,6 @@ def bam_to_consensus_seqrecord(bam_path,
 
     if fix_gaps:
         gaps = find_gaps(weights, clip_starts, clip_ends, threshold_weight, min_depth)
-        print(gaps)
-        # gaps = [(1430, 1500)]
         gap_consensuses = reconcile_gaps(gaps, weights, clip_s_weights, clip_e_weights, min_depth,
                                          closure_k, uppercase)
     else:
