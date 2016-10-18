@@ -1,15 +1,7 @@
 # TODO
-# 2016-10-08
-# - gaps currently based on soft clip peaks rather than coverage thresholds
-# - idea: inner gap coords where coverage falls below threshold
-#   - used for flanking sequences, enables better gap closure
-#   - requires linking of pairs of cov and clip-based gap coords
-#   - clipping_boundaries
-#   - coverage_boundaries
-
-
-# for file in *.bam; do echo $file; python3 /Users/Bede/Research/Tools/kindel/kindel/kindel.py --fix-gaps --trim-ends $file > $file.cns.fa; done
-
+# - reporting:
+#   - mix/max coverage
+#   - consensus_sequence()… namedtuple causing slowdown?
 
 import os
 import sys
@@ -42,7 +34,7 @@ def parse_alignment(bam_path):
         deletions = [0] * ref_len
         clip_starts = [0] * (ref_len + 1)
         clip_ends = [0] * (ref_len + 1)
-        for record in tqdm.tqdm(records): # Progress bar
+        for record in tqdm.tqdm(records, desc='loading sequences'): # Progress bar
             q_pos = 0 
             r_pos = record.pos-1 # Zero indexed genome coordinates
             for i, cigarette in enumerate(record.cigars):
@@ -77,11 +69,6 @@ def parse_alignment(bam_path):
                                 clip_s_weights[r_pos][q_nt] += 1
                                 r_pos += 1
                                 q_pos += 1
-        # for i, (lc, rc) in enumerate(zip(clip_starts, clip_ends)):
-        #     print(i, lc, rc)  
-        # for i, (csw, cew) in enumerate(zip(clip_s_weights, clip_e_weights)):
-        #     # print(i, csw, cew)
-        #     print(i, *max(csw.items(), key=lambda x:x[1]), *max(cew.items(), key=lambda x:x[1]))
     return (ref_name, weights, insertions, deletions, clip_starts, clip_ends, clip_s_weights,
            clip_e_weights)
 
@@ -107,14 +94,13 @@ def find_gaps(weights, clip_starts, clip_ends, threshold_weight, min_depth):
 
 def consensus(weight):
     '''
-    Returns consensus base, corresponding weight and a flag indicating a tie for consensus
+    Returns namedtuple of consensus base, weight and flag indicating a tie for consensus
     '''
-    tie = False
     consensus_base, consensus_weight = max(weight.items(), key=lambda x:x[1])
-    weight_sans_consensus = {k:d for k, d in weight.items() if k != consensus_base }
-    if consensus_weight in weight_sans_consensus.values():
-        tie = True
-    return consensus_base, consensus_weight, tie
+    weight_sans_consensus = {k:d for k, d in weight.items() if k != consensus_base}
+    tie = True if consensus_weight in weight_sans_consensus.values() else False
+    pos_consensus = collections.namedtuple('pos_consensus', ['base', 'weight', 'tie'])
+    return pos_consensus(consensus_base, consensus_weight, tie)
 
 
 def s_overhang_consensus(clip_s_weights, start_pos, min_depth, max_len=500):
@@ -124,9 +110,9 @@ def s_overhang_consensus(clip_s_weights, start_pos, min_depth, max_len=500):
     '''
     consensus_overhang = ''
     for pos in range(start_pos, start_pos+max_len):
-        consensus_base, consensus_weight, tie = consensus(clip_s_weights[pos])
-        if consensus_weight >= min_depth:
-            consensus_overhang += consensus_base
+        pos_consensus = consensus(clip_s_weights[pos])
+        if pos_consensus.weight >= min_depth:
+            consensus_overhang += pos_consensus.base
         else:
             break
     return consensus_overhang
@@ -139,9 +125,9 @@ def e_overhang_consensus(clip_e_weights, start_pos, min_depth, max_len=500):
     '''
     rev_consensus_overhang = ''
     for pos in range(start_pos, start_pos-max_len, -1):
-        consensus_base, consensus_weight, tie = consensus(clip_e_weights[pos])
-        if consensus_weight >= min_depth:
-            rev_consensus_overhang += consensus_base
+        pos_consensus = consensus(clip_e_weights[pos])
+        if pos_consensus.weight >= min_depth:
+            rev_consensus_overhang += pos_consensus.base
         else:
             break
     consensus_overhang = rev_consensus_overhang[::-1]
@@ -154,9 +140,9 @@ def s_flanking_seq(start_pos, weights, min_depth, k):
     '''
     flank_seq = ''
     for pos in range(start_pos-k, start_pos):
-        consensus_base, consensus_weight, tie = consensus(weights[pos])
-        if consensus_weight >= min_depth:
-            flank_seq += consensus_base
+        pos_consensus = consensus(weights[pos])
+        if pos_consensus.weight >= min_depth:
+            flank_seq += pos_consensus.base
     return flank_seq
 
 
@@ -166,9 +152,9 @@ def e_flanking_seq(end_pos, weights, min_depth, k):
     '''
     flank_seq = ''
     for pos in range(end_pos+1, end_pos+k+1):
-        consensus_base, consensus_weight, tie = consensus(weights[pos])
-        if consensus_weight >= min_depth:
-            flank_seq += consensus_base
+        pos_consensus = consensus(weights[pos])
+        if pos_consensus.weight >= min_depth:
+            flank_seq += pos_consensus.base
 
     return flank_seq
 
@@ -233,18 +219,18 @@ def reconcile_gaps(gaps, weights, clip_s_weights, clip_e_weights, min_depth, clo
 
 def consensus_sequence(weights, clip_s_weights, clip_e_weights, insertions, deletions, gaps,
                        gap_consensuses, fix_gaps, trim_ends, threshold_weight, min_depth):
-    consensus = ''
+    consensus_seq = ''
     changes = [None] * len(weights)
     gap_starts = [g[0] for g in gaps] if fix_gaps else []
     skip_pos = False
 
-    for pos, weight in enumerate(weights):
+    for pos, weight in tqdm.tqdm(enumerate(weights), total=len(weights), desc='building consensus'):
         ins_freq = sum(insertions[pos].values()) if insertions[pos] else 0
         del_freq = deletions[pos]
         coverage = sum({nt: weight[nt] for nt in list('ACGT')}.values())
         threshold_weight_freq = coverage * threshold_weight
         if pos in gap_starts and pos in gap_consensuses:
-            consensus += gap_consensuses[pos]
+            consensus_seq += gap_consensuses[pos]
             gap_i = gap_starts.index(pos)
             skip_pos = gaps[gap_i][1]-pos
         elif skip_pos:
@@ -253,17 +239,18 @@ def consensus_sequence(weights, clip_s_weights, clip_e_weights, insertions, dele
         elif del_freq > threshold_weight_freq:
             changes[pos] = 'D'
         elif coverage < min_depth:
-            consensus += 'N'
+            consensus_seq += 'N'
             changes[pos] = 'N'
         else:
-            consensus += max(weight, key=lambda k: weight[k])
+            pos_consensus = consensus(weight)
+            consensus_seq += pos_consensus.base if not pos_consensus.tie else 'N'
         if ins_freq > threshold_weight_freq:
-            top_ins, top_ins_freq = max(insertions[pos].items(), key=lambda x:x[1])
-            consensus += top_ins
+            insertion = consensus(insertions[pos])
+            consensus_seq += insertion.base if not insertion.tie else 'N'
             changes[pos] = 'I'
     if trim_ends:
-        consensus = consensus.strip('N')
-    return consensus, changes
+        consensus_seq = consensus_seq.strip('N')
+    return consensus_seq, changes
 
 
 def consensus_seqrecord(consensus, ref_name):
@@ -272,14 +259,7 @@ def consensus_seqrecord(consensus, ref_name):
 
 def build_report(weights, changes, gaps, gap_consensuses, bam_path, fix_gaps, trim_ends,
                  threshold_weight, min_depth, closure_k, uppercase):
-    # weights_acgt = [{nt: weights[i][nt] for nt in list('ACGT')} for i in range(len(weights))]
-    # coverage = [sum(weight.values()) for weight in weights_acgt]
     coverage = [sum({nt:w[nt] for nt in list('ACGT')}.values()) for w in weights]
-    # for i, cov in enumerate(coverage):
-    #     print(str(i), cov)
-    # for i, (cov, w) in enumerate(zip(coverage, weights)):
-    #     print(str(i), cov, 'A:'+str(w['A']), 'C:'+str(w['C']), 'G:'+str(w['G']), 'T:'+str(w['T']), 'N:'+str(w['N']))
-    # print(coverage)
     ambiguous_sites = []
     insertion_sites = []
     deletion_sites = []
@@ -311,13 +291,13 @@ def build_report(weights, changes, gaps, gap_consensuses, bam_path, fix_gaps, tr
     return report
 
 
-def bam_to_consensus_seqrecord(bam_path,
-                               fix_gaps=False,
-                               trim_ends=False,
-                               threshold_weight=0.5,
-                               min_depth=2,
-                               closure_k=7,
-                               uppercase=False):
+def bam_to_consensus(bam_path,
+                     fix_gaps=False,
+                     trim_ends=False,
+                     threshold_weight=0.5,
+                     min_depth=2,
+                     closure_k=7,
+                     uppercase=False):
     
     (ref_name, weights, insertions, deletions, clip_starts, clip_ends, clip_s_weights,
      clip_e_weights) = parse_alignment(bam_path)
@@ -335,10 +315,12 @@ def bam_to_consensus_seqrecord(bam_path,
     
     consensus_record = consensus_seqrecord(consensus, ref_name)
     
-    report_fmt = build_report(weights, changes, gaps, gap_consensuses, bam_path, fix_gaps,
-                              trim_ends, threshold_weight, min_depth, closure_k, uppercase)
+    report = build_report(weights, changes, gaps, gap_consensuses, bam_path, fix_gaps, trim_ends,
+                          threshold_weight, min_depth, closure_k, uppercase)
+    
+    result = collections.namedtuple('result', ['record', 'report'])
 
-    return consensus_record, report_fmt
+    return result(consensus_record, report)
 
 
 def bam_to_consensus_fasta(bam_path: 'path to SAM/BAM file',
@@ -348,11 +330,10 @@ def bam_to_consensus_fasta(bam_path: 'path to SAM/BAM file',
                            min_depth: 'substitute Ns at coverage depths beneath this value'=2,
                            closure_k: 'match length required to close soft-clipped gaps'=7,
                            uppercase: 'close gaps using uppercase alphabet'=False):
-    consensus_record, report_fmt = bam_to_consensus_seqrecord(bam_path, fix_gaps, trim_ends,
-                                                              threshold_weight, min_depth,
-                                                              closure_k, uppercase)
-    print(report_fmt, file=sys.stderr)
-    return consensus_record.format('fasta')
+    result = bam_to_consensus(bam_path, fix_gaps, trim_ends, threshold_weight, min_depth, closure_k,
+                              uppercase)
+    print(result.report, file=sys.stderr)
+    return result.record.format('fasta')
 
 
 if __name__ == '__main__':
