@@ -5,18 +5,19 @@ from kindel import kindel
 from Bio import SeqIO
 
 
-sample_ids = ['HCV_AVU_AB_1.12345.R12.sub',
-             'HCV_AVU_AB_3.4.R12.sub',
-             'HCV_AVU_AB_7.1.R12.sub',
-             'HCV_AVU_AB_9.1.R12.sub',
-             'HCV_AVU_AB_11.1.R12.sub']
+sample_ids = ['HCV_AVU_AB_1.12345.R12.sub']
+             # 'HCV_AVU_AB_3.4.R12.sub',
+             # 'HCV_AVU_AB_7.1.R12.sub',
+             # 'HCV_AVU_AB_9.1.R12.sub',
+             # 'HCV_AVU_AB_11.1.R12.sub']
 
 ### UNIT ###
 
 def test_consensus():
     pos_weight = {'A': 1, 'C': 2, 'G': 3, 'T': 4, 'N': 5}
     assert kindel.consensus(pos_weight).base == 'N'
-    assert kindel.consensus(pos_weight).weight == 5
+    assert kindel.consensus(pos_weight).frequency == 5
+    assert kindel.consensus(pos_weight).prop == 0.33
     assert kindel.consensus(pos_weight).tie is False
     pos_weight_tie = {'A': 5, 'C': 5, 'G': 3, 'T': 4, 'N': 1}
     assert kindel.consensus(pos_weight_tie)[2]
