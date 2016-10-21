@@ -5,11 +5,11 @@ from kindel import kindel
 from Bio import SeqIO
 
 
-sample_ids = ['HCV_AVU_AB_1.12345.R12.sub']
-             # 'HCV_AVU_AB_3.4.R12.sub',
-             # 'HCV_AVU_AB_7.1.R12.sub',
-             # 'HCV_AVU_AB_9.1.R12.sub',
-             # 'HCV_AVU_AB_11.1.R12.sub']
+sample_ids = ['HCV_AVU_AB_1.12345.R12.sub',
+             'HCV_AVU_AB_3.4.R12.sub',
+             'HCV_AVU_AB_7.1.R12.sub',
+             'HCV_AVU_AB_9.1.R12.sub',
+             'HCV_AVU_AB_11.1.R12.sub']
 
 ### UNIT ###
 

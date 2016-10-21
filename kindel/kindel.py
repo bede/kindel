@@ -85,11 +85,13 @@ def find_gaps(weights, clip_starts, clip_ends, threshold_weight, min_depth):
     coverage = [sum({nt:w[nt] for nt in list('ACGT')}.values()) for w in weights]
     gap_open = False
     for i, (cov, clip_s, clip_e) in enumerate(zip(coverage, clip_starts, clip_ends)):
-        threshold_weight_freq = max(cov*threshold_weight, min_depth)
-        if clip_s > threshold_weight_freq and i:
+        threshold_weight_freq = int(max(cov*threshold_weight, min_depth))
+        if clip_s >= threshold_weight_freq and i:
+            print(clip_s, threshold_weight_freq)
             gap_start = i
             gap_open = True
-        elif gap_open and clip_e > threshold_weight_freq and i:
+        elif gap_open and clip_e >= threshold_weight_freq and i:
+            print(clip_s, threshold_weight_freq)
             gap_end = i
             gaps.append(gap(gap_start, gap_end))
             gap_open = False
@@ -132,6 +134,7 @@ def e_overhang_consensus(clip_e_weights, start_pos, min_depth, max_len=500):
     rev_consensus_overhang = ''
     for pos in range(start_pos, start_pos-max_len, -1):
         pos_consensus = consensus(clip_e_weights[pos])
+        print(clip_e_weights[pos], pos, pos_consensus.frequency, min_depth)
         if pos_consensus.frequency >= min_depth:
             rev_consensus_overhang += pos_consensus.base
         else:
@@ -205,6 +208,10 @@ def reconcile_gaps(gaps, weights, clip_s_weights, clip_e_weights, min_depth, clo
         e_overhang_seq = e_overhang_consensus(clip_e_weights, gap.end, min_depth)
         s_flank_seq = s_flanking_seq(gap.start, weights, min_depth, closure_k)
         e_flank_seq = e_flanking_seq(gap.end, weights, min_depth, closure_k)
+        print(s_overhang_seq)
+        print(e_overhang_seq)
+        print(s_flank_seq)
+        print(e_flank_seq)
         if e_flank_seq in s_overhang_seq: # Close gap using right-clipped read consensus
             i = s_overhang_seq.find(e_flank_seq) # str.find() returns -1 in absence of match
             gap_consensus = s_overhang_seq[:i]
@@ -214,7 +221,7 @@ def reconcile_gaps(gaps, weights, clip_s_weights, clip_e_weights, min_depth, clo
         elif len(lcs(s_overhang_seq, e_overhang_seq)) >= closure_k:
             gap_consensus = close_by_lcs(s_overhang_seq, e_overhang_seq)
         else:
-            print('Failed to close gap') # Stub... Needs tests
+            print('Failed to close gap', file=sys.stderr) # Stub... Needs tests
             break
         if uppercase:
             gap_consensuses[gap.start] = gap_consensus
