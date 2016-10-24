@@ -25,8 +25,7 @@ def test_consensus():
 
 ### FUNCTIONAL ###
 # cd /Users/bede/Research/Tools/kindel/kindel/tests/bam
-# for file in *.bam; do echo $file; python3 /Users/Bede/Research/Tools/kindel/kindel/kindel.py \
-#     --fix-gaps --trim-ends $file > master_cns/$file.cns.fa; done
+# for file in *.bam; do echo $file; python3 /Users/Bede/Research/Tools/kindel/kindel/kindel.py --fix-gaps --trim-ends $file > master_cns/$file.cns.fa; done
 
 def test_basic():
     bam_path = 'tests/bam/' + sample_ids[0] + '.bam'

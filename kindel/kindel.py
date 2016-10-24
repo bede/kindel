@@ -87,11 +87,11 @@ def find_gaps(weights, clip_starts, clip_ends, threshold_weight, min_depth):
     for i, (cov, clip_s, clip_e) in enumerate(zip(coverage, clip_starts, clip_ends)):
         threshold_weight_freq = int(max(cov*threshold_weight, min_depth))
         if clip_s >= threshold_weight_freq and i:
-            print(clip_s, threshold_weight_freq)
+            # print(clip_s, threshold_weight_freq)
             gap_start = i
             gap_open = True
         elif gap_open and clip_e >= threshold_weight_freq and i:
-            print(clip_s, threshold_weight_freq)
+            # print(clip_s, threshold_weight_freq)
             gap_end = i
             gaps.append(gap(gap_start, gap_end))
             gap_open = False
@@ -100,15 +100,15 @@ def find_gaps(weights, clip_starts, clip_ends, threshold_weight, min_depth):
 
 def consensus(weight):
     '''
-    Returns namedtuple of consensus base, weight and flag indicating a tie for consensus
+    Returns tuple of consensus base, weight and flag indicating a tie for consensus
+    namedtuples are prettier but slower
     '''
     base, frequency = max(weight.items(), key=lambda x:x[1]) if sum(weight.values()) else ('N', 0)
     weight_sans_consensus = {k:d for k, d in weight.items() if k != base}
     tie = True if frequency and frequency in weight_sans_consensus.values() else False
     coverage = sum(weight.values())
     prop = round(frequency/coverage, 2) if coverage else 0
-    result = namedtuple('result', ['base', 'frequency', 'prop', 'tie'])
-    return result(base, frequency, prop, tie)
+    return(base, frequency, prop, tie)
 
 
 def s_overhang_consensus(clip_s_weights, start_pos, min_depth, max_len=500):
@@ -119,8 +119,8 @@ def s_overhang_consensus(clip_s_weights, start_pos, min_depth, max_len=500):
     consensus_overhang = ''
     for pos in range(start_pos, start_pos+max_len):
         pos_consensus = consensus(clip_s_weights[pos])
-        if pos_consensus.frequency >= min_depth:
-            consensus_overhang += pos_consensus.base
+        if pos_consensus[1] >= min_depth:
+            consensus_overhang += pos_consensus[0]
         else:
             break
     return consensus_overhang
@@ -134,9 +134,9 @@ def e_overhang_consensus(clip_e_weights, start_pos, min_depth, max_len=500):
     rev_consensus_overhang = ''
     for pos in range(start_pos, start_pos-max_len, -1):
         pos_consensus = consensus(clip_e_weights[pos])
-        print(clip_e_weights[pos], pos, pos_consensus.frequency, min_depth)
-        if pos_consensus.frequency >= min_depth:
-            rev_consensus_overhang += pos_consensus.base
+        # print(clip_e_weights[pos], pos, pos_consensus[1], min_depth)
+        if pos_consensus[1] >= min_depth:
+            rev_consensus_overhang += pos_consensus[0]
         else:
             break
     consensus_overhang = rev_consensus_overhang[::-1]
@@ -150,8 +150,8 @@ def s_flanking_seq(start_pos, weights, min_depth, k):
     flank_seq = ''
     for pos in range(start_pos-k, start_pos):
         pos_consensus = consensus(weights[pos])
-        if pos_consensus.frequency >= min_depth:
-            flank_seq += pos_consensus.base
+        if pos_consensus[1] >= min_depth:
+            flank_seq += pos_consensus[0]
     return flank_seq
 
 
@@ -162,8 +162,8 @@ def e_flanking_seq(end_pos, weights, min_depth, k):
     flank_seq = ''
     for pos in range(end_pos+1, end_pos+k+1):
         pos_consensus = consensus(weights[pos])
-        if pos_consensus.frequency >= min_depth:
-            flank_seq += pos_consensus.base
+        if pos_consensus[1] >= min_depth:
+            flank_seq += pos_consensus[0]
 
     return flank_seq
 
@@ -208,10 +208,10 @@ def reconcile_gaps(gaps, weights, clip_s_weights, clip_e_weights, min_depth, clo
         e_overhang_seq = e_overhang_consensus(clip_e_weights, gap.end, min_depth)
         s_flank_seq = s_flanking_seq(gap.start, weights, min_depth, closure_k)
         e_flank_seq = e_flanking_seq(gap.end, weights, min_depth, closure_k)
-        print(s_overhang_seq)
-        print(e_overhang_seq)
-        print(s_flank_seq)
-        print(e_flank_seq)
+        # print(s_overhang_seq)
+        # print(e_overhang_seq)
+        # print(s_flank_seq)
+        # print(e_flank_seq)
         if e_flank_seq in s_overhang_seq: # Close gap using right-clipped read consensus
             i = s_overhang_seq.find(e_flank_seq) # str.find() returns -1 in absence of match
             gap_consensus = s_overhang_seq[:i]
@@ -256,10 +256,10 @@ def consensus_sequence(weights, clip_s_weights, clip_e_weights, insertions, dele
             changes[pos] = 'N'
         else:
             pos_consensus = consensus(weight)
-            consensus_seq += pos_consensus.base if not pos_consensus.tie else 'N'
+            consensus_seq += pos_consensus[0] if not pos_consensus[3] else 'N'
         if ins_freq > threshold_weight_freq:
             insertion = consensus(insertions[pos])
-            consensus_seq += insertion.base if not insertion.tie else 'N'
+            consensus_seq += insertion[0] if not insertion[3] else 'N'
             changes[pos] = 'I'
     if trim_ends:
         consensus_seq = consensus_seq.strip('N')
