@@ -213,13 +213,16 @@ def reconcile_gaps(gaps, weights, clip_s_weights, clip_e_weights, min_depth, clo
         # print(s_flank_seq)
         # print(e_flank_seq)
         if e_flank_seq in s_overhang_seq: # Close gap using right-clipped read consensus
+            print('WAHHH')
             i = s_overhang_seq.find(e_flank_seq) # str.find() returns -1 in absence of match
             gap_consensus = s_overhang_seq[:i]
         elif s_flank_seq in e_overhang_seq: # Close gap using left-clipped read consensus
+            print('WOHHH')
             i = e_overhang_seq.find(s_flank_seq)
             gap_consensus = e_overhang_seq[i:]
         elif len(lcs(s_overhang_seq, e_overhang_seq)) >= closure_k:
             gap_consensus = close_by_lcs(s_overhang_seq, e_overhang_seq)
+            print('WEHHH')
         else:
             print('Failed to close gap', file=sys.stderr) # Stub... Needs tests
             break

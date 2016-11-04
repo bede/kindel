@@ -6,7 +6,7 @@ from Bio import SeqIO
 
 
 def show_weights(sample_ids):
-    sample_weights = [SeqIO.read('tests/bam/master_cns/' + id + '.bam.cns.fa', 'fasta') for id in sample_ids]
+    sample_weights = [SeqIO.read('tests/bam/test_cns/' + id + '.bam.cns.fa', 'fasta') for id in sample_ids]
 
     alignments = []
     for sample_id in sample_ids:
@@ -19,11 +19,12 @@ def show_weights(sample_ids):
             consensus = kindel.consensus(w)
             print(i,
                   coverage,
-                  consensus.base,
-                  consensus.frequency,
-                  consensus.prop,
-                  'TIE' if consensus.tie else '',
-                  'DIVERGENT' if consensus.prop and consensus.prop <= 0.75 else '')
+                  consensus[0],
+                  consensus[1],
+                  consensus[2],
+                  'TIE' if consensus[3] else '',
+                  'DIVERGENT' if consensus[2] and consensus[2] <= 0.75 else '',
+                  w)
 
 
 if __name__ == '__main__':
