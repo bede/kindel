@@ -297,7 +297,7 @@ def build_report(weights, changes, gaps, gap_consensuses, bam_path, fix_gaps, tr
     report += '- threshold_weight: {}\n'.format(threshold_weight)
     report += '- min_depth: {}\n'.format(min_depth)
     report += '- closure_k: {}\n'.format(closure_k)
-    report += 'min,max observed depth: {},{}\n'.format(min(coverage), max(coverage))
+    report += 'min,max observed depth[50:-50]: {},{}\n'.format(min(coverage[50:-50]), max(coverage))
     report += 'ambiguous sites: {}\n'.format(', '.join(ambiguous_sites))
     report += 'insertion sites: {}\n'.format(', '.join(insertion_sites))
     report += 'deletion sites: {}\n'.format(', '.join(deletion_sites))
