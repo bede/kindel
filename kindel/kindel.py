@@ -86,7 +86,7 @@ def find_gaps(weights, clip_starts, clip_ends, threshold_weight, min_depth):
     gap_open = False
     for i, (cov, clip_s, clip_e) in enumerate(zip(coverage, clip_starts, clip_ends)):
         threshold_weight_freq = int(max(cov*threshold_weight, min_depth))
-        if clip_s >= threshold_weight_freq and i:
+        if clip_s >= threshold_weight_freq and not gap_open and i:
             # print(clip_s, threshold_weight_freq)
             gap_start = i
             gap_open = True
@@ -213,16 +213,16 @@ def reconcile_gaps(gaps, weights, clip_s_weights, clip_e_weights, min_depth, clo
         # print(s_flank_seq)
         # print(e_flank_seq)
         if e_flank_seq in s_overhang_seq: # Close gap using right-clipped read consensus
-            print('WAHHH')
+            # print('e_flank_seq in s_overhang_seq')
             i = s_overhang_seq.find(e_flank_seq) # str.find() returns -1 in absence of match
             gap_consensus = s_overhang_seq[:i]
         elif s_flank_seq in e_overhang_seq: # Close gap using left-clipped read consensus
-            print('WOHHH')
+            # print('s_flank_seq in e_overhang_seq')
             i = e_overhang_seq.find(s_flank_seq)
             gap_consensus = e_overhang_seq[i:]
         elif len(lcs(s_overhang_seq, e_overhang_seq)) >= closure_k:
             gap_consensus = close_by_lcs(s_overhang_seq, e_overhang_seq)
-            print('WEHHH')
+            # print('len(lcs(s_overhang_seq, e_overhang_seq)) >= closure_k')
         else:
             print('Failed to close gap', file=sys.stderr) # Stub... Needs tests
             break
@@ -314,25 +314,25 @@ def bam_to_consensus(bam_path,
                      min_depth=2,
                      closure_k=7,
                      uppercase=False):
-    
+
     aln = parse_alignment(bam_path)
-    
+
     if fix_gaps:
         gaps = find_gaps(aln.weights, aln.clip_starts, aln.clip_ends, threshold_weight, min_depth)
         gap_consensuses = reconcile_gaps(gaps, aln.weights, aln.clip_s_weights, aln.clip_e_weights,
                                          min_depth, closure_k, uppercase)
     else:
         gaps, gap_consensuses = None, None
-    
+
     consensus, changes = consensus_sequence(aln.weights, aln.clip_s_weights, aln.clip_e_weights,
                                             aln.insertions, aln.deletions, gaps, gap_consensuses,
                                             fix_gaps, trim_ends, threshold_weight, min_depth)
-    
+
     consensus_record = consensus_seqrecord(consensus, aln.ref_id)
     
     report = build_report(aln.weights, changes, gaps, gap_consensuses, bam_path, fix_gaps,
                           trim_ends, threshold_weight, min_depth, closure_k, uppercase)
-    
+
     result = namedtuple('result', ['record', 'report'])
 
     return result(consensus_record, report)
@@ -350,7 +350,7 @@ def bam_to_consensus_fasta(bam_path: 'path to SAM/BAM file',
                               uppercase)
     
     print(result.report, file=sys.stderr)
-    
+
     return result.record.format('fasta')
 
 

@@ -15,10 +15,10 @@ sample_ids = ['HCV_AVU_AB_1.12345.R12.sub',
 
 def test_consensus():
     pos_weight = {'A': 1, 'C': 2, 'G': 3, 'T': 4, 'N': 5}
-    assert kindel.consensus(pos_weight).base == 'N'
-    assert kindel.consensus(pos_weight).frequency == 5
-    assert kindel.consensus(pos_weight).prop == 0.33
-    assert kindel.consensus(pos_weight).tie is False
+    assert kindel.consensus(pos_weight)[0] == 'N'
+    assert kindel.consensus(pos_weight)[1] == 5
+    assert kindel.consensus(pos_weight)[2] == 0.33
+    assert kindel.consensus(pos_weight)[3] is False
     pos_weight_tie = {'A': 5, 'C': 5, 'G': 3, 'T': 4, 'N': 1}
     assert kindel.consensus(pos_weight_tie)[2]
 
