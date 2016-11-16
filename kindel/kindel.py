@@ -1,6 +1,5 @@
-# TODO
-# - reporting:
-#   - mix/max coverage
+# Author: Bede Constantinides - b|at|bede|dot|im, @beconstant
+# License: GPL V3
 
 import os
 import sys
