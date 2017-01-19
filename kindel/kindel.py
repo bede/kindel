@@ -4,7 +4,7 @@
 import os
 import sys
 
-from collections import defaultdict, namedtuple
+from collections import OrderedDict, defaultdict, namedtuple
 
 import argh
 import tqdm
@@ -13,66 +13,76 @@ import simplesam
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
-def parse_alignment(bam_path):
+
+def parse_records(ref_id, ref_len, records):
     '''
     Iterate over records, returning namedtuple of base frequencies, indels and soft clipping info
     weights: lists of dicts of base frequencies after CIGAR reconciliation
     insertions, deletions: list of dicts of base frequencies
     clip_starts, clip_ends: lists of clipping start and end frequencies in an LTR direction
-    clip_s_weights, clip_e_weights: base frequencies from left- and right-clipped regions
+    clip_start_weights, clip_end_weights: base frequencies from left- and right-clipped regions
     '''
-    with open(bam_path, 'r') as bam_fh:
-        records = simplesam.Reader(bam_fh)
-        first_sq = list(records.header['@SQ'].values())[0] if '@SQ' in records.header else None
-        ref_id = os.path.splitext(os.path.basename(bam_path))[0]
-        ref_len = int(next(iter(first_sq)).replace('LN:','')) if first_sq else 100000
-        weights = [{'A':0,'T':0,'G':0,'C':0,'N':0} for p in range(ref_len)]
-        clip_s_weights = [{'A':0,'T':0,'G':0,'C':0,'N':0} for p in range(ref_len)]
-        clip_e_weights = [{'A':0,'T':0,'G':0,'C':0,'N':0} for p in range(ref_len)]
-        insertions = [defaultdict(int) for p in range(ref_len)]
-        deletions = [0] * ref_len
-        clip_starts = [0] * (ref_len + 1)
-        clip_ends = [0] * (ref_len + 1)
-        for record in tqdm.tqdm(records, desc='loading sequences'): # Progress bar
-            q_pos = 0 
-            r_pos = record.pos-1 # Zero indexed genome coordinates
-            for i, cigarette in enumerate(record.cigars):
-                length, operation = cigarette
-                if operation == 'M':
-                    for _ in range(length):
-                        q_nt = record.seq[q_pos].upper()
-                        weights[r_pos][q_nt] += 1
-                        r_pos += 1
-                        q_pos += 1
-                elif operation == 'I':
-                    nts = record.seq[q_pos:q_pos+length].upper()
-                    insertions[r_pos][nts] += 1
+    weights = [{'A':0, 'T':0, 'G':0, 'C':0, 'N':0} for p in range(ref_len)]
+    clip_start_weights = [{'A':0, 'T':0, 'G':0, 'C':0, 'N':0} for p in range(ref_len)]
+    clip_end_weights = [{'A':0, 'T':0, 'G':0, 'C':0, 'N':0} for p in range(ref_len)]
+    clip_starts = [0] * (ref_len + 1)
+    clip_ends = [0] * (ref_len + 1)
+    insertions = [defaultdict(int) for p in range(ref_len)]
+    deletions = [0] * ref_len
+    for record in tqdm.tqdm(records, desc='loading sequences'): # Progress bar
+        q_pos = 0 
+        r_pos = record.pos-1 # Zero indexed genome coordinates
+        for i, cigarette in enumerate(record.cigars):
+            length, operation = cigarette
+            if operation == 'M':
+                for _ in range(length):
+                    q_nt = record.seq[q_pos].upper()
+                    weights[r_pos][q_nt] += 1
+                    r_pos += 1
+                    q_pos += 1
+            elif operation == 'I':
+                nts = record.seq[q_pos:q_pos+length].upper()
+                insertions[r_pos][nts] += 1
+                q_pos += length
+            elif operation == 'D':
+                deletions[r_pos] += 1
+                r_pos += length
+            elif operation == 'S':
+                if i == 0: # Count right-of-gap / l-clipped start positions (e.g. start of ref)
+                    clip_ends[r_pos] += 1
+                    for gap_i in range(length):
+                        q_nt = record.seq[gap_i].upper()
+                        rel_r_pos = r_pos - length + gap_i
+                        if rel_r_pos >= 0:
+                            clip_end_weights[rel_r_pos][q_nt] += 1
                     q_pos += length
-                elif operation == 'D':
-                    deletions[r_pos] += 1
-                    r_pos += length
-                elif operation == 'S':
-                    if i == 0: # Count right-of-gap / l-clipped start positions (e.g. start of ref)
-                        clip_ends[r_pos] += 1
-                        for gap_i in range(length):
-                            q_nt = record.seq[gap_i].upper()
-                            rel_r_pos = r_pos - length + gap_i
-                            if rel_r_pos >= 0:
-                                clip_e_weights[rel_r_pos][q_nt] += 1
-                        q_pos += length
-                    else: # Count left-of-gap / r-clipped start position (e.g. end of ref)
-                        clip_starts[r_pos] += 1 
-                        for pos in range(length):
-                            q_nt = record.seq[q_pos].upper()
-                            if r_pos < ref_len:
-                                clip_s_weights[r_pos][q_nt] += 1
-                                r_pos += 1
-                                q_pos += 1
-
+                else: # Count left-of-gap / r-clipped start position (e.g. end of ref)
+                    clip_starts[r_pos] += 1 
+                    for pos in range(length):
+                        q_nt = record.seq[q_pos].upper()
+                        if r_pos < ref_len:
+                            clip_start_weights[r_pos][q_nt] += 1
+                            r_pos += 1
+                            q_pos += 1
+    
     alignment = namedtuple('alignment', ['ref_id', 'weights', 'insertions', 'deletions',
-                           'clip_starts', 'clip_ends', 'clip_s_weights', 'clip_e_weights'])
-    return alignment(ref_id, weights, insertions, deletions, clip_starts, clip_ends, clip_s_weights,
-                     clip_e_weights)
+                           'clip_starts', 'clip_ends', 'clip_start_weights', 'clip_end_weights'])
+    return alignment(ref_id, weights, insertions, deletions, clip_starts, clip_ends,
+                     clip_start_weights, clip_end_weights)
+
+
+def parse_bam(bam_path):
+    '''
+    Returns alignment information for each reference sequence as an OrderedDict
+    '''
+    alignments = OrderedDict()
+    with open(bam_path, 'r') as bam_fh:
+        bam = simplesam.Reader(bam_fh)
+        refs_lens = {n.replace('SN:', ''): int(l[0].replace('LN:', '')) for n, l in bam.header['@SQ'].items()}
+        refs_records = {id: (r for r in bam if r.rname == id) for id in refs_lens} # {ref:(records)}
+        for ref_id, records in refs_records.items():
+            alignments[ref_id] = parse_records(ref_id, refs_lens[ref_id], records)
+    return alignments
 
 
 def find_gaps(weights, clip_starts, clip_ends, threshold_weight, min_depth):
@@ -110,14 +120,14 @@ def consensus(weight):
     return(base, frequency, prop, tie)
 
 
-def s_overhang_consensus(clip_s_weights, start_pos, min_depth, max_len=500):
+def s_overhang_consensus(clip_start_weights, start_pos, min_depth, max_len=500):
     '''
     Returns consensus sequence (string) of clipped reads at specified position
     start_pos is the first position described by the CIGAR-S
     '''
     consensus_overhang = ''
     for pos in range(start_pos, start_pos+max_len):
-        pos_consensus = consensus(clip_s_weights[pos])
+        pos_consensus = consensus(clip_start_weights[pos])
         if pos_consensus[1] >= min_depth:
             consensus_overhang += pos_consensus[0]
         else:
@@ -125,15 +135,15 @@ def s_overhang_consensus(clip_s_weights, start_pos, min_depth, max_len=500):
     return consensus_overhang
 
 
-def e_overhang_consensus(clip_e_weights, start_pos, min_depth, max_len=500):
+def e_overhang_consensus(clip_end_weights, start_pos, min_depth, max_len=500):
     '''
     Returns consensus sequence (string) of clipped reads at specified position
     end_pos is the last position described by the CIGAR-S
     '''
     rev_consensus_overhang = ''
     for pos in range(start_pos, start_pos-max_len, -1):
-        pos_consensus = consensus(clip_e_weights[pos])
-        # print(clip_e_weights[pos], pos, pos_consensus[1], min_depth)
+        pos_consensus = consensus(clip_end_weights[pos])
+        # print(clip_end_weights[pos], pos, pos_consensus[1], min_depth)
         if pos_consensus[1] >= min_depth:
             rev_consensus_overhang += pos_consensus[0]
         else:
@@ -196,15 +206,15 @@ def close_by_lcs(l_seq, r_seq):
     return l_trim + _lcs + r_trim
 
 
-def reconcile_gaps(gaps, weights, clip_s_weights, clip_e_weights, min_depth, closure_k, uppercase):
+def reconcile_gaps(gaps, weights, clip_start_weights, clip_end_weights, min_depth, closure_k, uppercase):
     '''
     Returns dict of consensus insertions between to gap coordinates from find_gaps()
     Dict keys are gap start positions (left of gap)
     '''
     gap_consensuses = {}
     for gap in gaps:
-        s_overhang_seq = s_overhang_consensus(clip_s_weights, gap.start, min_depth)
-        e_overhang_seq = e_overhang_consensus(clip_e_weights, gap.end, min_depth)
+        s_overhang_seq = s_overhang_consensus(clip_start_weights, gap.start, min_depth)
+        e_overhang_seq = e_overhang_consensus(clip_end_weights, gap.end, min_depth)
         s_flank_seq = s_flanking_seq(gap.start, weights, min_depth, closure_k)
         e_flank_seq = e_flanking_seq(gap.end, weights, min_depth, closure_k)
         # print(s_overhang_seq)
@@ -232,7 +242,7 @@ def reconcile_gaps(gaps, weights, clip_s_weights, clip_e_weights, min_depth, clo
     return gap_consensuses
 
 
-def consensus_sequence(weights, clip_s_weights, clip_e_weights, insertions, deletions, gaps,
+def consensus_sequence(weights, clip_start_weights, clip_end_weights, insertions, deletions, gaps,
                        gap_consensuses, fix_gaps, trim_ends, threshold_weight, min_depth):
     consensus_seq = ''
     changes = [None] * len(weights)
@@ -314,16 +324,16 @@ def bam_to_consensus(bam_path,
                      closure_k=7,
                      uppercase=False):
 
-    aln = parse_alignment(bam_path)
+    aln = list(parse_bam(bam_path).values())[0]
 
     if fix_gaps:
         gaps = find_gaps(aln.weights, aln.clip_starts, aln.clip_ends, threshold_weight, min_depth)
-        gap_consensuses = reconcile_gaps(gaps, aln.weights, aln.clip_s_weights, aln.clip_e_weights,
+        gap_consensuses = reconcile_gaps(gaps, aln.weights, aln.clip_start_weights, aln.clip_end_weights,
                                          min_depth, closure_k, uppercase)
     else:
         gaps, gap_consensuses = None, None
 
-    consensus, changes = consensus_sequence(aln.weights, aln.clip_s_weights, aln.clip_e_weights,
+    consensus, changes = consensus_sequence(aln.weights, aln.clip_start_weights, aln.clip_end_weights,
                                             aln.insertions, aln.deletions, gaps, gap_consensuses,
                                             fix_gaps, trim_ends, threshold_weight, min_depth)
 
