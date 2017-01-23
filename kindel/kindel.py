@@ -10,6 +10,7 @@ import argh
 import tqdm
 import simplesam
 
+from Bio import SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
@@ -76,6 +77,8 @@ def parse_bam(bam_path):
     Returns alignment information for each reference sequence as an OrderedDict
     '''
     alignments = OrderedDict()
+    # print('\n>>>>>>>>>>')
+    # print(bam_path, file=sys.stderr)
     with open(bam_path, 'r') as bam_fh:
         bam = simplesam.Reader(bam_fh)
         refs_lens = {n.replace('SN:', ''): int(l[0].replace('LN:', '')) for n, l in bam.header['@SQ'].items()}
@@ -316,35 +319,30 @@ def build_report(weights, changes, gaps, gap_consensuses, bam_path, fix_gaps, tr
     return report
 
 
-def bam_to_consensus(bam_path,
-                     fix_gaps=False,
-                     trim_ends=False,
-                     threshold_weight=0.5,
-                     min_depth=2,
-                     closure_k=7,
-                     uppercase=False):
-
-    aln = list(parse_bam(bam_path).values())[0]
-
-    if fix_gaps:
-        gaps = find_gaps(aln.weights, aln.clip_starts, aln.clip_ends, threshold_weight, min_depth)
-        gap_consensuses = reconcile_gaps(gaps, aln.weights, aln.clip_start_weights, aln.clip_end_weights,
-                                         min_depth, closure_k, uppercase)
-    else:
-        gaps, gap_consensuses = None, None
-
-    consensus, changes = consensus_sequence(aln.weights, aln.clip_start_weights, aln.clip_end_weights,
-                                            aln.insertions, aln.deletions, gaps, gap_consensuses,
-                                            fix_gaps, trim_ends, threshold_weight, min_depth)
-
-    consensus_record = consensus_seqrecord(consensus, aln.ref_id)
-    
-    report = build_report(aln.weights, changes, gaps, gap_consensuses, bam_path, fix_gaps,
-                          trim_ends, threshold_weight, min_depth, closure_k, uppercase)
-
-    result = namedtuple('result', ['record', 'report'])
-
-    return result(consensus_record, report)
+def bam_to_consensus(bam_path, fix_gaps=False, trim_ends=False, threshold_weight=0.5, min_depth=2,
+                     closure_k=7, uppercase=False, reporting=True):
+    refs_consensuses = []
+    refs_changes = {}
+    # print(list(parse_bam(bam_path).keys()))
+    for ref_id, aln in parse_bam(bam_path).items():
+        if fix_gaps:
+            gaps = find_gaps(aln.weights, aln.clip_starts, aln.clip_ends,
+                                   threshold_weight, min_depth)
+            gap_consensuses = reconcile_gaps(gaps, aln.weights, aln.clip_start_weights,
+                                             aln.clip_end_weights, min_depth, closure_k, uppercase)
+        else:
+            gaps, gap_consensuses = None, None
+        # print(ref_id, file=sys.stderr)
+        consensus, changes = consensus_sequence(aln.weights, aln.clip_start_weights,
+                                                aln.clip_end_weights, aln.insertions, aln.deletions,
+                                                gaps, gap_consensuses, fix_gaps, trim_ends,
+                                                threshold_weight, min_depth)
+        report = build_report(aln.weights, changes, gaps, gap_consensuses, bam_path, fix_gaps,
+                              trim_ends, threshold_weight, min_depth, closure_k, uppercase)
+    refs_consensuses.append(consensus_seqrecord(consensus, ref_id))
+    refs_changes[ref_id] = changes
+    result = namedtuple('result', ['consensuses', 'refs_changes', 'report'])
+    return result(refs_consensuses, refs_changes, report)
 
 
 def bam_to_consensus_fasta(bam_path: 'path to SAM/BAM file',
@@ -357,10 +355,8 @@ def bam_to_consensus_fasta(bam_path: 'path to SAM/BAM file',
     
     result = bam_to_consensus(bam_path, fix_gaps, trim_ends, threshold_weight, min_depth, closure_k,
                               uppercase)
-    
     print(result.report, file=sys.stderr)
-
-    return result.record.format('fasta')
+    SeqIO.write(result.consensuses, sys.stdout,'fasta')
 
 
 if __name__ == '__main__':

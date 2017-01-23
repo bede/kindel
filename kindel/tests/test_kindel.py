@@ -34,25 +34,29 @@ def test_consensus():
 
 ### FUNCTIONAL ###
 # cd /Users/bede/Research/Tools/kindel/kindel/tests/bwa
-# for file in *.bam; do echo $file; python3 /Users/Bede/Research/Tools/kindel/kindel/kindel.py --fix-gaps --trim-ends $file > master_cns/$file.cns.fa; done
+# RESET MASTER for file in *.bam; do echo $file; python3 /Users/Bede/Research/Tools/kindel/kindel/kindel.py --fix-gaps --trim-ends $file > master_cns/$file.cns.fa; done
 
 def test_basic_bwa():
+    print('\n>>>>>>>>>> test_basic_bwa()')
     bam_path = 'tests/bwa/' + sample_ids[0] + '.bam'
     assert kindel.bam_to_consensus(bam_path)
 
-def test_outputs_fix_gaps_trim_ends_bwa(): # Slow AF
-    test_records = [kindel.bam_to_consensus('tests/bwa/' + id + '.bam',
+def test_outputs_fix_gaps_trim_ends_bwa():
+    print('\n>>>>>>>>>> test_outputs_fix_gaps_trim_ends_bwa()')
+    test_records = [kindel.bam_to_consensus(f'tests/bwa/{id}.bam',
                                             fix_gaps=True,
-                                            trim_ends=True)[0] for id in sample_ids]
+                                            trim_ends=True).consensuses for id in sample_ids]
+    for id, r in zip(sample_ids, test_records):
+        SeqIO.write(r, f'tests/bwa/test_cns/{id}.bam.cns.fa', 'fasta')
     master_records = [SeqIO.read('tests/bwa/master_cns/' + id + '.bam.cns.fa', 'fasta') for id in sample_ids]
+    
     for t, m in zip(test_records, master_records):
-        if str(t.seq) != str(m.seq):
-            print('test len:' + str(len(t.seq)), 'master len: ' + str(len(m.seq)))
-            lcs = kindel.lcs(str(t.seq), str(m.seq))
+        if str(t[0].seq) != str(m.seq):
+            print('test len:' + str(len(t[0])), 'master len: ' + str(len(m.seq)))
+            lcs = kindel.lcs(str(t[0]), str(m.seq))
             print(lcs)
             print('lcs len: ' + str(len(lcs)))
-            # SeqIO.write(t, sys.stdout, 'fasta')
-            # SeqIO.write(m, sys.stdout, 'fasta')
+
 
 # def test_outputs_fix_gaps_trim_ends_bwa_parallel():
 #     partial_bam_to_consensus = functools.partial(kindel.bam_to_consensus,
