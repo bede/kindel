@@ -3,12 +3,11 @@
 
 import os
 import sys
-
-from collections import OrderedDict, defaultdict, namedtuple
-
 import argh
 import tqdm
 import simplesam
+
+from collections import OrderedDict, defaultdict, namedtuple
 
 from Bio import SeqIO
 from Bio.Seq import Seq
@@ -209,7 +208,7 @@ def close_by_lcs(l_seq, r_seq):
     return l_trim + _lcs + r_trim
 
 
-def reconcile_gaps(gaps, weights, clip_start_weights, clip_end_weights, min_depth, closure_k, uppercase):
+def reconcile_gaps(gaps, weights, clip_start_weights, clip_end_weights, min_depth, closure_k):
     '''
     Returns dict of consensus insertions between to gap coordinates from find_gaps()
     Dict keys are gap start positions (left of gap)
@@ -238,15 +237,12 @@ def reconcile_gaps(gaps, weights, clip_start_weights, clip_end_weights, min_dept
         else:
             print('Failed to close gap', file=sys.stderr) # Stub... Needs tests
             break
-        if uppercase:
-            gap_consensuses[gap.start] = gap_consensus
-        else:
-            gap_consensuses[gap.start] = gap_consensus.lower()
+        gap_consensuses[gap.start] = gap_consensus.lower()
     return gap_consensuses
 
 
 def consensus_sequence(weights, clip_start_weights, clip_end_weights, insertions, deletions, gaps,
-                       gap_consensuses, fix_gaps, trim_ends, threshold_weight, min_depth):
+                       gap_consensuses, fix_gaps, trim_ends, threshold_weight, min_depth, uppercase):
     consensus_seq = ''
     changes = [None] * len(weights)
     gap_starts = [g.start for g in gaps] if fix_gaps else []
@@ -274,10 +270,12 @@ def consensus_sequence(weights, clip_start_weights, clip_end_weights, insertions
             consensus_seq += pos_consensus[0] if not pos_consensus[3] else 'N'
         if ins_freq > threshold_weight_freq:
             insertion = consensus(insertions[pos])
-            consensus_seq += insertion[0] if not insertion[3] else 'N'
+            consensus_seq += insertion[0].lower() if not insertion[3] else 'N'
             changes[pos] = 'I'
     if trim_ends:
         consensus_seq = consensus_seq.strip('N')
+    if uppercase:
+        consensus_seq = consensus_seq.upper()
     return consensus_seq, changes
 
 
@@ -327,16 +325,16 @@ def bam_to_consensus(bam_path, fix_gaps=False, trim_ends=False, threshold_weight
     for ref_id, aln in parse_bam(bam_path).items():
         if fix_gaps:
             gaps = find_gaps(aln.weights, aln.clip_starts, aln.clip_ends,
-                                   threshold_weight, min_depth)
+                             threshold_weight, min_depth)
             gap_consensuses = reconcile_gaps(gaps, aln.weights, aln.clip_start_weights,
-                                             aln.clip_end_weights, min_depth, closure_k, uppercase)
+                                             aln.clip_end_weights, min_depth, closure_k)
         else:
             gaps, gap_consensuses = None, None
         # print(ref_id, file=sys.stderr)
         consensus, changes = consensus_sequence(aln.weights, aln.clip_start_weights,
                                                 aln.clip_end_weights, aln.insertions, aln.deletions,
                                                 gaps, gap_consensuses, fix_gaps, trim_ends,
-                                                threshold_weight, min_depth)
+                                                threshold_weight, min_depth, uppercase)
         report = build_report(aln.weights, changes, gaps, gap_consensuses, bam_path, fix_gaps,
                               trim_ends, threshold_weight, min_depth, closure_k, uppercase)
     refs_consensuses.append(consensus_seqrecord(consensus, ref_id))
@@ -353,8 +351,7 @@ def bam_to_consensus_fasta(bam_path: 'path to SAM/BAM file',
                            closure_k: 'match length required to close soft-clipped gaps'=7,
                            uppercase: 'close gaps using uppercase alphabet'=False):
     
-    result = bam_to_consensus(bam_path, fix_gaps, trim_ends, threshold_weight, min_depth, closure_k,
-                              uppercase)
+    result = bam_to_consensus(bam_path, fix_gaps, trim_ends, threshold_weight, min_depth, closure_k)
     print(result.report, file=sys.stderr)
     SeqIO.write(result.consensuses, sys.stdout,'fasta')
 
