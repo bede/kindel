@@ -235,8 +235,8 @@ def reconcile_gaps(gaps, weights, clip_start_weights, clip_end_weights, min_dept
             gap_consensus = close_by_lcs(s_overhang_seq, e_overhang_seq)
             # print('len(lcs(s_overhang_seq, e_overhang_seq)) >= closure_k')
         else:
-            print('Failed to close gap', file=sys.stderr) # Stub... Needs tests
-            break
+            print('Unable to close gap', file=sys.stderr)
+            continue
         gap_consensuses[gap.start] = gap_consensus.lower()
     return gap_consensuses
 
