@@ -13,6 +13,8 @@ from Bio import SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
+from kindel import kindel
+
 
 def parse_records(ref_id, ref_len, records):
     '''
@@ -343,18 +345,5 @@ def bam_to_consensus(bam_path, fix_gaps=False, trim_ends=False, threshold_weight
     return result(refs_consensuses, refs_changes, report)
 
 
-def bam_to_consensus_fasta(bam_path: 'path to SAM/BAM file',
-                           fix_gaps: 'attempt to reconcile reference at soft-clip boundaries'=False,
-                           trim_ends: 'trim ambiguous nucleotides (Ns) from sequence ends'=False,
-                           threshold_weight: 'consensus threshold weight'=0.5,
-                           min_depth: 'substitute Ns at coverage depths beneath this value'=2,
-                           closure_k: 'match length required to close soft-clipped gaps'=7,
-                           uppercase: 'close gaps using uppercase alphabet'=False):
-    
-    result = bam_to_consensus(bam_path, fix_gaps, trim_ends, threshold_weight, min_depth, closure_k)
-    print(result.report, file=sys.stderr)
-    SeqIO.write(result.consensuses, sys.stdout,'fasta')
-
-
 if __name__ == '__main__':
-    argh.dispatch_command(bam_to_consensus_fasta)
+    tictax.cli.main()
