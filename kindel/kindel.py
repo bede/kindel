@@ -13,6 +13,8 @@ from Bio import SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
+import pandas as pd
+
 from kindel import kindel
 
 
@@ -343,6 +345,25 @@ def bam_to_consensus(bam_path, fix_gaps=False, trim_ends=False, threshold_weight
     refs_changes[ref_id] = changes
     result = namedtuple('result', ['consensuses', 'refs_changes', 'report'])
     return result(refs_consensuses, refs_changes, report)
+
+
+def weights(bam_path: 'path to SAM/BAM file',
+            relative: 'output relative nucleotide frequencies'=False):
+    '''Returns DataFrame of per-site nucleotide frequencies and coverage'''
+    refs_alns = kindel.parse_bam(bam_path)
+    weights_fmt = []
+    for ref, aln in refs_alns.items():
+        weights_fmt.extend([dict(w, ref=ref, pos=i) for i, w in enumerate(aln.weights, start=1)])
+    weights_df = pd.DataFrame(weights_fmt, columns=['ref','pos','A','C','G','T','N'])
+    weights_raw_df = weights_df[['A','C','G','T','N']]
+    depths_df = pd.DataFrame(weights_raw_df.sum(axis=1))
+    if relative:
+        relative_weights_df = (weights_raw_df.T / weights_raw_df.T.sum()).T
+        relative_weights_df['depth'] = depths_df
+        return relative_weights_df
+    else:
+        weights_df['depth'] = depths_df
+        return weights_df
 
 
 if __name__ == '__main__':

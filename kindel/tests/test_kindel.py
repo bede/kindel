@@ -58,6 +58,10 @@ def test_outputs_fix_gaps_trim_ends_bwa():
             print('lcs len: ' + str(len(lcs)))
 
 
+def test_weights():
+    weights = kindel.weights('tests/bwa/' + sample_ids[0] + '.bam')
+
+
 # def test_outputs_fix_gaps_trim_ends_bwa_parallel():
 #     partial_bam_to_consensus = functools.partial(kindel.bam_to_consensus,
 #                                                  fix_gaps=True,
