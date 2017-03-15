@@ -116,7 +116,7 @@ def find_gaps(weights, clip_starts, clip_ends, threshold_weight, min_depth):
 def consensus(weight):
     '''
     Returns tuple of consensus base, weight and flag indicating a tie for consensus
-    namedtuples are prettier but slower
+    Removed namedtuples for performance
     '''
     base, frequency = max(weight.items(), key=lambda x:x[1]) if sum(weight.values()) else ('N', 0)
     weight_sans_consensus = {k:d for k, d in weight.items() if k != base}
@@ -364,6 +364,37 @@ def weights(bam_path: 'path to SAM/BAM file',
     else:
         weights_df['depth'] = depths_df
         return weights_df
+
+
+def variants(bam_path: 'path to SAM/BAM file',
+             abs_threshold: 'absolute frequency (0-∞) threshold above which to call variants'=1,
+             rel_threshold: 'relative frequency (0.0-1.0) threshold above which to call variants'=0.01,
+             ci_threshold: 'lower confidence limit (0-1) above which to call variants '=False,
+             consensus_threshold_weight: 'consensus threshold weight'=0.5):
+    '''
+    Call single nucleotide variants from a consensus-aligned BAM exceeding specified thresholds of
+    absolute or relative frequencies or lower bounds of Sison-Glaz multinomial confidence intervals
+
+    '''
+    weights = kindel.weights(bam_path)[['A', 'C', 'G', 'T', 'N']].to_dict('records')
+    
+    variants = []
+    variant_sites = []
+
+    for i, weight in enumerate(weights, start=1):
+        cov = sum(weight.values())
+        consensus = kindel.consensus(weight)
+        alt_weight = {nt: w for nt, w in weight.items() if nt != consensus[0]}
+        site_variants = {nt:w/cov if w/cov > rel_threshold else 0 for nt, w in alt_weight.items()}
+        if site_variants:
+            variant_sites.append(i)
+        variants.append(site_variants)
+    print(pd.DataFrame(variants))
+
+
+    # TESTTESTTEST
+
+    # print(variants)
 
 
 if __name__ == '__main__':
