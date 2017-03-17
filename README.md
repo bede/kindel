@@ -34,7 +34,9 @@ positional arguments:
 
 optional arguments:
   -h, --help            show this help message and exit
-
+```
+---
+```
 $ kindel consensus -h
 usage: kindel consensus [-h] [-f] [--trim-ends] [--threshold THRESHOLD]
                         [-m MIN_DEPTH] [-c CLOSURE_K] [-u]
@@ -61,6 +63,44 @@ optional arguments:
                         (default: 7)
   -u, --uppercase       close gaps using uppercase alphabet (default: False)
 ```
+---
+```
+$ kindel weights -h
+usage: kindel weights [-h] [-r] [-n] bam-path
+
+Returns DataFrame of per-site nucleotide frequencies and coverage
+
+positional arguments:
+  bam-path             path to SAM/BAM file
+
+optional arguments:
+  -h, --help           show this help message and exit
+  -r, --relative       output relative nucleotide frequencies (default: False)
+  -n, --no-confidence  skip confidence calculation (default: False)
+
+```
+---
+```
+$ kindel variants -h
+usage: kindel variants [-h] [-a ABS_THRESHOLD] [-r REL_THRESHOLD] [-o]
+                       bam-path
+
+Output variants exceeding specified absolute and relative frequency thresholds
+
+positional arguments:
+  bam-path              path to SAM/BAM file
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -a ABS_THRESHOLD, --abs-threshold ABS_THRESHOLD
+                        absolute frequency (0-∞) threshold above which to call
+                        variants (default: 1)
+  -r REL_THRESHOLD, --rel-threshold REL_THRESHOLD
+                        relative frequency (0.0-1.0) threshold above which to
+                        call variants (default: 0.01)
+  -o, --only-variants   exclude invariant sites from output (default: False)
+```
+
 
 ### Python3
 ```python
@@ -81,6 +121,7 @@ Please let me know if you run into problems by opening a GitHub issue, [tweeting
 ## Features
 - [x] Reconciliation of CIGAR described insertions and deletions
 - [x] Gap closure (`--fix-gaps`) using soft-clipped alignment context (not yet in tagged release)
+- [ ] Support / test against SAMs from a variety of aligners
 - [ ] Support mutiple reference sequences (needs testing)
 - [ ] Substitution only mode (`--ignore-indels`)
 - [ ] Frequency based variant calling with `kindel variants`

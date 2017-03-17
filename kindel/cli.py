@@ -34,7 +34,6 @@ def weights(bam_path: 'path to SAM/BAM file',
 def variants(bam_path: 'path to SAM/BAM file',
              abs_threshold: 'absolute frequency (0-∞) threshold above which to call variants'=1,
              rel_threshold: 'relative frequency (0.0-1.0) threshold above which to call variants'=0.01,
-             consensus_threshold: 'consensus threshold weight'=0.5,
              only_variants: 'exclude invariant sites from output'=False):
     '''Output variants exceeding specified absolute and relative frequency thresholds'''
     variants_df = kindel.variants(bam_path, abs_threshold, rel_threshold, consensus_threshold,

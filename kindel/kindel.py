@@ -390,7 +390,6 @@ def weights(bam_path: 'path to SAM/BAM file',
 def variants(bam_path: 'path to SAM/BAM file',
              abs_threshold: 'absolute frequency (0-∞) threshold above which to call variants'=1,
              rel_threshold: 'relative frequency (0.0-1.0) threshold above which to call variants'=0.01,
-             consensus_threshold_weight: 'consensus threshold weight'=0.5,
              only_variants: 'exclude invariant sites from output'=False):
     '''
     Returns DataFrame of single nucleotide variants from a consensus-aligned BAM exceeding specified thresholds of
@@ -428,4 +427,4 @@ def variants(bam_path: 'path to SAM/BAM file',
 
 
 if __name__ == '__main__':
-    tictax.cli.main()
+    kindel.cli.main()
