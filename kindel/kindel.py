@@ -6,6 +6,7 @@ import sys
 import argh
 import tqdm
 import simplesam
+import scipy.stats
 
 from collections import OrderedDict, defaultdict, namedtuple
 
@@ -13,6 +14,7 @@ from Bio import SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
+import numpy as np
 import pandas as pd
 
 from kindel import kindel
@@ -35,7 +37,7 @@ def parse_records(ref_id, ref_len, records):
     deletions = [0] * ref_len
     for record in tqdm.tqdm(records, desc='loading sequences'): # Progress bar
         q_pos = 0 
-        r_pos = record.pos-1 # Zero indexed genome coordinates
+        r_pos = record.pos-1  # Zero indexed genome coordinates
         for i, cigarette in enumerate(record.cigars):
             length, operation = cigarette
             if operation == 'M':
@@ -52,7 +54,7 @@ def parse_records(ref_id, ref_len, records):
                 deletions[r_pos] += 1
                 r_pos += length
             elif operation == 'S':
-                if i == 0: # Count right-of-gap / l-clipped start positions (e.g. start of ref)
+                if i == 0:  # Count right-of-gap / l-clipped start positions (e.g. start of ref)
                     clip_ends[r_pos] += 1
                     for gap_i in range(length):
                         q_nt = record.seq[gap_i].upper()
@@ -60,7 +62,7 @@ def parse_records(ref_id, ref_len, records):
                         if rel_r_pos >= 0:
                             clip_end_weights[rel_r_pos][q_nt] += 1
                     q_pos += length
-                else: # Count left-of-gap / r-clipped start position (e.g. end of ref)
+                else:  # Count left-of-gap / r-clipped start position (e.g. end of ref)
                     clip_starts[r_pos] += 1 
                     for pos in range(length):
                         q_nt = record.seq[q_pos].upper()
@@ -227,11 +229,11 @@ def reconcile_gaps(gaps, weights, clip_start_weights, clip_end_weights, min_dept
         # print(e_overhang_seq)
         # print(s_flank_seq)
         # print(e_flank_seq)
-        if e_flank_seq in s_overhang_seq: # Close gap using right-clipped read consensus
+        if e_flank_seq in s_overhang_seq:  # Close gap using right-clipped read consensus
             # print('e_flank_seq in s_overhang_seq')
-            i = s_overhang_seq.find(e_flank_seq) # str.find() returns -1 in absence of match
+            i = s_overhang_seq.find(e_flank_seq)  # str.find() returns -1 in absence of match
             gap_consensus = s_overhang_seq[:i]
-        elif s_flank_seq in e_overhang_seq: # Close gap using left-clipped read consensus
+        elif s_flank_seq in e_overhang_seq:  # Close gap using left-clipped read consensus
             # print('s_flank_seq in e_overhang_seq')
             i = e_overhang_seq.find(s_flank_seq)
             gap_consensus = e_overhang_seq[i:]
@@ -348,53 +350,81 @@ def bam_to_consensus(bam_path, fix_gaps=False, trim_ends=False, threshold_weight
 
 
 def weights(bam_path: 'path to SAM/BAM file',
-            relative: 'output relative nucleotide frequencies'=False):
-    '''Returns DataFrame of per-site nucleotide frequencies and coverage'''
+            relative: 'output relative nucleotide frequencies'=False,
+            no_confidence: 'skip confidence calculation'=False):
+    '''
+    Returns DataFrame of per-site nucleotide frequencies, coverage, consensus, lower bound of the
+    99% consensus confidence interval, and Shannon entropy
+    '''
+    def binomial_ci(count, nobs, alpha=0.01):
+        '''Returns lower, upper bounds of the Jeffrey binomial proportion confidence interval'''
+        lower_ci, upper_ci = scipy.stats.beta.interval(1-alpha, count+0.5, nobs-count+0.5)
+        return lower_ci, upper_ci
+    
     refs_alns = kindel.parse_bam(bam_path)
     weights_fmt = []
     for ref, aln in refs_alns.items():
         weights_fmt.extend([dict(w, ref=ref, pos=i) for i, w in enumerate(aln.weights, start=1)])
+    
     weights_df = pd.DataFrame(weights_fmt, columns=['ref','pos','A','C','G','T','N'])
-    weights_raw_df = weights_df[['A','C','G','T','N']]
-    depths_df = pd.DataFrame(weights_raw_df.sum(axis=1))
+    weights_df['depth'] = weights_df[['A','C','G','T','N']].sum(axis=1)
+    consensus_depths_df = weights_df[['A','C','G','T','N']].max(axis=1)
+    weights_df['consensus'] = consensus_depths_df.divide(weights_df.depth)
+    
+    rel_weights_df = pd.DataFrame()
+    for nt in ['A','C','G','T','N']:
+        rel_weights_df[[nt]] = weights_df[[nt]].divide(weights_df.depth, axis=0)
+    
+    weights_df['shannon'] = [scipy.stats.entropy(x) for x in rel_weights_df[['A','C','G','T']].as_matrix()]
+    
+    if not no_confidence:
+        weights_df['lower_ci'] = [binomial_ci(c, t)[0] for c, t, in zip(consensus_depths_df, weights_df['depth'])]
+    
     if relative:
-        relative_weights_df = (weights_raw_df.T / weights_raw_df.T.sum()).T
-        relative_weights_df['depth'] = depths_df
-        return relative_weights_df
-    else:
-        weights_df['depth'] = depths_df
-        return weights_df
+        for nt in ['A','C','G','T','N']:
+            weights_df[[nt]] = rel_weights_df[[nt]]
+    
+    return weights_df.round(dict(consensus=3, lower_ci=3, shannon=3))
 
 
 def variants(bam_path: 'path to SAM/BAM file',
              abs_threshold: 'absolute frequency (0-∞) threshold above which to call variants'=1,
              rel_threshold: 'relative frequency (0.0-1.0) threshold above which to call variants'=0.01,
-             ci_threshold: 'lower confidence limit (0-1) above which to call variants '=False,
-             consensus_threshold_weight: 'consensus threshold weight'=0.5):
+             consensus_threshold_weight: 'consensus threshold weight'=0.5,
+             only_variants: 'exclude invariant sites from output'=False):
     '''
-    Call single nucleotide variants from a consensus-aligned BAM exceeding specified thresholds of
-    absolute or relative frequencies or lower bounds of Sison-Glaz multinomial confidence intervals
+    Returns DataFrame of single nucleotide variants from a consensus-aligned BAM exceeding specified thresholds of
+    absolute or relative frequency
 
     '''
-    weights = kindel.weights(bam_path)[['A', 'C', 'G', 'T', 'N']].to_dict('records')
-    
-    variants = []
+    weights_df = kindel.weights(bam_path, no_confidence=True)
+    weights = weights_df[['A','C','G','T']].to_dict('records')
     variant_sites = []
-
-    for i, weight in enumerate(weights, start=1):
-        cov = sum(weight.values())
+    
+    for i, weight in enumerate(weights):
+        depth = sum(weight.values())
         consensus = kindel.consensus(weight)
-        alt_weight = {nt: w for nt, w in weight.items() if nt != consensus[0]}
-        site_variants = {nt:w/cov if w/cov > rel_threshold else 0 for nt, w in alt_weight.items()}
-        if site_variants:
-            variant_sites.append(i)
-        variants.append(site_variants)
-    print(pd.DataFrame(variants))
+        alt_weight = {nt:w for nt, w in weight.items() if nt != consensus[0]}
+        alt_depths = alt_weight.values()
+        max_alt_weight = max(alt_weight, key=alt_weight.get)
+        max_alt_depth = max(alt_depths)
+        alts_above_thresholds = {nt:w for nt, w in alt_weight.items()  # get weights >= abs & rel
+                                 if depth and w >= abs_threshold and w/depth >= rel_threshold}
+        variant_sites.append(alts_above_thresholds)
 
-
-    # TESTTESTTEST
-
-    # print(variants)
+    variants_df = pd.DataFrame(variant_sites, columns=['A','C','G','T'])
+    variants_df = pd.concat([weights_df.ref,
+                             weights_df.pos,
+                             variants_df,
+                             weights_df.depth,
+                             weights_df.consensus,
+                             weights_df.shannon], axis=1)
+    if only_variants:
+        variants_df = variants_df[variants_df['A'].notnull()
+                                  | variants_df['C'].notnull()
+                                  | variants_df['G'].notnull()
+                                  | variants_df['T'].notnull()]
+    return variants_df
 
 
 if __name__ == '__main__':
