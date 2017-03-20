@@ -210,6 +210,7 @@ def lcs(s1, s2):
 def close_by_lcs(l_seq, r_seq):
     '''
     Returns sequence built from merged overlapping left- and right-clipped consensus sequences
+    Potentially very slow; used as last resort
     '''
     _lcs = lcs(l_seq, r_seq)
     l_trim = l_seq[:l_seq.find(_lcs)]
@@ -393,11 +394,11 @@ def weights(bam_path: 'path to SAM/BAM file',
 def variants(bam_path: 'path to SAM/BAM file',
              abs_threshold: 'absolute frequency (0-∞) threshold above which to call variants'=1,
              rel_threshold: 'relative frequency (0.0-1.0) threshold above which to call variants'=0.01,
-             only_variants: 'exclude invariant sites from output'=False):
+             only_variants: 'exclude invariant sites from output'=False,
+             absolute: 'report absolute variant frequencies'=False):
     '''
-    Returns DataFrame of single nucleotide variants from a consensus-aligned BAM exceeding specified thresholds of
-    absolute or relative frequency
-
+    Returns DataFrame of single nucleotide variant frequencies exceeding specified frequency
+    thresholds from an aligned BAM
     '''
     weights_df = kindel.weights(bam_path, no_confidence=True)
     weights = weights_df[['A','C','G','T']].to_dict('records')
@@ -407,12 +408,16 @@ def variants(bam_path: 'path to SAM/BAM file',
         depth = sum(weight.values())
         consensus = kindel.consensus(weight)
         alt_weight = {nt:w for nt, w in weight.items() if nt != consensus[0]}
+        alt_weight_rel = {nt:w/depth for nt, w in alt_weight.items() if depth}
         alt_depths = alt_weight.values()
         max_alt_weight = max(alt_weight, key=alt_weight.get)
         max_alt_depth = max(alt_depths)
-        alts_above_thresholds = {nt:w for nt, w in alt_weight.items()  # get weights >= abs & rel
+        alts_above_thresholds = {nt:w for nt, w in alt_weight.items()  # Get weights >= abs & rel
                                  if depth and w >= abs_threshold and w/depth >= rel_threshold}
-        variant_sites.append(alts_above_thresholds)
+        if absolute:
+            variant_sites.append(alts_above_thresholds)
+        else:
+            variant_sites.append({nt:w/depth for nt, w in alts_above_thresholds.items() if depth})
 
     variants_df = pd.DataFrame(variant_sites, columns=['A','C','G','T'])
     variants_df = pd.concat([weights_df.ref,
@@ -426,7 +431,7 @@ def variants(bam_path: 'path to SAM/BAM file',
                                   | variants_df['C'].notnull()
                                   | variants_df['G'].notnull()
                                   | variants_df['T'].notnull()]
-    return variants_df
+    return variants_df.round(dict(A=3, C=3, G=3, T=3))
 
 
 def parse_samtools_depth(*args):
