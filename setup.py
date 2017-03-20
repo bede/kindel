@@ -21,7 +21,7 @@ setup(name='kindel',
       install_requires=['argh==0.26.2',
                         'tqdm==4.11.2',
                         'numpy==1.12.0',
-                        'pandas==0.19.2'
-                        'biopython==1.67',
+                        'pandas==0.19.2',
+                        'biopython==1.68',
                         'simplesam==0.0.4'],
       entry_points = {'console_scripts':['kindel=kindel.cli:main']})

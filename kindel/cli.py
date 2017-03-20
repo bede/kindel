@@ -2,6 +2,8 @@ import sys
 import argh
 import pandas as pd
 
+from Bio import SeqIO
+
 from kindel import kindel
 
 
@@ -20,7 +22,7 @@ def consensus(bam_path: 'path to SAM/BAM file',
                                      min_depth,
                                      closure_k)
     print(result.report, file=sys.stderr)
-    return SeqIO.write(result.consensuses, sys.stdout,'fasta')
+    SeqIO.write(result.consensuses, sys.stdout,'fasta')
 
 
 def weights(bam_path: 'path to SAM/BAM file',
@@ -28,7 +30,7 @@ def weights(bam_path: 'path to SAM/BAM file',
             no_confidence: 'skip confidence calculation'=False):
     '''Returns DataFrame of per-site nucleotide frequencies and coverage'''
     weights_df = kindel.weights(bam_path, relative, no_confidence)
-    return weights_df.to_csv(sys.stdout, sep='\t', index=False)
+    weights_df.to_csv(sys.stdout, sep='\t', index=False)
 
 
 def variants(bam_path: 'path to SAM/BAM file',
@@ -38,7 +40,7 @@ def variants(bam_path: 'path to SAM/BAM file',
     '''Output variants exceeding specified absolute and relative frequency thresholds'''
     variants_df = kindel.variants(bam_path, abs_threshold, rel_threshold, consensus_threshold,
                                   only_variants)
-    return variants_df.to_csv(sys.stdout, sep='\t', index=False, na_rep=None)
+    variants_df.to_csv(sys.stdout, sep='\t', index=False, na_rep=None)
 
 def main():
     parser = argh.ArghParser()
