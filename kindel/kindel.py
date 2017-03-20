@@ -17,6 +17,9 @@ from Bio.SeqRecord import SeqRecord
 import numpy as np
 import pandas as pd
 
+import plotly.offline as py
+import plotly.graph_objs as go
+
 from kindel import kindel
 
 
@@ -424,6 +427,44 @@ def variants(bam_path: 'path to SAM/BAM file',
                                   | variants_df['G'].notnull()
                                   | variants_df['T'].notnull()]
     return variants_df
+
+
+def parse_samtools_depth(*args):
+    ids_depths = {}
+    for arg in args:
+        id = arg
+        depths_df = pd.read_table(arg, names=['contig', 'position', 'depth'])
+        ids_depths[id] = depths_df.depth.tolist()
+    return ids_depths
+
+
+def plot_samtools_depth(ids_depths):
+    n_positions = len(ids_depths[max(ids_depths, key=lambda x: len(set(ids_depths[x])))])
+    traces = []
+    for id, depths in sorted(ids_depths.items()):
+        traces.append(
+            go.Scattergl(
+                x=list(range(1, n_positions)),
+                y=depths,
+                mode='lines',
+                name=id,
+                text=id))
+    layout = go.Layout(
+        title='Depth of coverage',
+        xaxis=dict(
+            title='Reference sequence position',
+            gridcolor='rgb(255, 255, 255)',
+            gridwidth=2),
+        yaxis=dict(
+            title='Depth of coverage',
+            gridcolor='rgb(255, 255, 255)',
+            gridwidth=2,
+            type='log'),
+        paper_bgcolor='rgb(243, 243, 243)',
+        plot_bgcolor='rgb(243, 243, 243)')
+
+    fig = go.Figure(data=traces, layout=layout)
+    py.plot(fig, filename='depths.html')
 
 
 if __name__ == '__main__':
