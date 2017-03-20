@@ -443,7 +443,7 @@ def parse_samtools_depth(*args):
     return ids_depths
 
 
-def plot_samtools_depth(ids_depths):
+def plotly_samtools_depth(ids_depths):
     n_positions = len(ids_depths[max(ids_depths, key=lambda x: len(set(ids_depths[x])))])
     traces = []
     for id, depths in sorted(ids_depths.items()):
@@ -457,11 +457,11 @@ def plot_samtools_depth(ids_depths):
     layout = go.Layout(
         title='Depth of coverage',
         xaxis=dict(
-            title='Reference sequence position',
+            title='Position',
             gridcolor='rgb(255, 255, 255)',
             gridwidth=2),
         yaxis=dict(
-            title='Depth of coverage',
+            title='Depth',
             gridcolor='rgb(255, 255, 255)',
             gridwidth=2,
             type='log'),
@@ -470,6 +470,44 @@ def plot_samtools_depth(ids_depths):
 
     fig = go.Figure(data=traces, layout=layout)
     py.plot(fig, filename='depths.html')
+
+
+def parse_variants(*args):
+    ids_data = {}
+    for arg in args:
+        id = arg
+        df = pd.read_table(arg, sep='\t')
+        df['max_alt'] = df[['A', 'C', 'G', 'T']].max(axis=1)
+        ids_data[id] = df.to_dict('series')
+    return ids_data
+
+
+def plotly_variants(ids_data):
+    traces = []
+    for id, data in sorted(ids_data.items()):
+        traces.append(
+            go.Scattergl(
+                x=data['pos'],
+                y=data['max_alt'],
+                mode='markers',
+                name=id,
+                text=id))
+    layout = go.Layout(
+        title='Variants',
+        xaxis=dict(
+            title='Position',
+            gridcolor='rgb(255, 255, 255)',
+            gridwidth=2),
+        yaxis=dict(
+            title='Abundance',
+            gridcolor='rgb(255, 255, 255)',
+            gridwidth=2,
+            type='linear'),
+        paper_bgcolor='rgb(243, 243, 243)',
+        plot_bgcolor='rgb(243, 243, 243)')
+
+    fig = go.Figure(data=traces, layout=layout)
+    py.plot(fig, filename='variants.html')
 
 
 if __name__ == '__main__':
