@@ -33,6 +33,12 @@ def weights(bam_path: 'path to SAM/BAM file',
     weights_df.to_csv(sys.stdout, sep='\t', index=False)
 
 
+def features(bam_path: 'path to SAM/BAM file'):
+    '''Returns table of per-site nucleotide frequencies and coverage including indels'''
+    weights_df = kindel.features(bam_path)
+    weights_df.to_csv(sys.stdout, sep='\t', index=False)
+
+
 def variants(bam_path: 'path to SAM/BAM file',
              abs_threshold: 'absolute frequency (0-∞) threshold above which to call variants'=1,
              rel_threshold: 'relative frequency (0.0-1.0) threshold above which to call variants'=0.01,
@@ -57,7 +63,7 @@ def plot_variants(*args):
 
 def main():
     parser = argh.ArghParser()
-    parser.add_commands([consensus, weights, variants, plot_depth, plot_variants])
+    parser.add_commands([consensus, weights, features, variants, plot_depth, plot_variants])
     parser.dispatch()
 
 

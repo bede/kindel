@@ -391,6 +391,33 @@ def weights(bam_path: 'path to SAM/BAM file',
     return weights_df.round(dict(consensus=3, lower_ci=3, shannon=3))
 
 
+def features(bam_path: 'path to SAM/BAM file'):
+    '''
+    Returns DataFrame of relative per-site nucleotide frequencies, insertions, deletions and entropy
+    '''
+    
+    refs_alns = kindel.parse_bam(bam_path)
+    weights_fmt = []
+    for ref, aln in refs_alns.items():
+        weights_fmt.extend([dict(w, ref=ref, pos=i) for i, w in enumerate(aln.weights, start=1)])
+    for pos, weight in enumerate(weights_fmt):
+        weight['i'] = sum(aln.insertions[pos].values())
+        weight['d'] = aln.deletions[pos]
+
+    # Think about which columns should sum to 1
+    weights_df = pd.DataFrame(weights_fmt, columns=['ref','pos','A','C','G','T','N','i','d'])
+    weights_df['depth'] = weights_df[['A','C','G','T','N', 'd']].sum(axis=1)
+    consensus_depths_df = weights_df[['A','C','G','T','N']].max(axis=1)
+    weights_df['consensus'] = consensus_depths_df.divide(weights_df.depth)
+    
+    for nt in ['A','C','G','T','N','i','d']:
+        weights_df[[nt]] = weights_df[[nt]].divide(weights_df.depth, axis=0)
+    
+    weights_df['shannon'] = [scipy.stats.entropy(x) for x in weights_df[['A','C','G','T','i','d']].as_matrix()]
+
+    return weights_df.round(3)
+
+
 def variants(bam_path: 'path to SAM/BAM file',
              abs_threshold: 'absolute frequency (0-∞) threshold above which to call variants'=1,
              rel_threshold: 'relative frequency (0.0-1.0) threshold above which to call variants'=0.01,
@@ -417,7 +444,7 @@ def variants(bam_path: 'path to SAM/BAM file',
         if absolute:
             variant_sites.append(alts_above_thresholds)
         else:
-            variant_sites.append({nt:w/depth for nt, w in alts_above_thresholds.items() if depth})
+            variant_sites.append({nt:round(w/depth, 3) for nt, w in alts_above_thresholds.items() if depth})
 
     variants_df = pd.DataFrame(variant_sites, columns=['A','C','G','T'])
     variants_df = pd.concat([weights_df.ref,
@@ -431,7 +458,7 @@ def variants(bam_path: 'path to SAM/BAM file',
                                   | variants_df['C'].notnull()
                                   | variants_df['G'].notnull()
                                   | variants_df['T'].notnull()]
-    return variants_df.round(dict(A=3, C=3, G=3, T=3))
+    return variants_df
 
 
 def parse_samtools_depth(*args):
