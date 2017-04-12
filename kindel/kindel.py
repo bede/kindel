@@ -17,9 +17,6 @@ from Bio.SeqRecord import SeqRecord
 import numpy as np
 import pandas as pd
 
-import plotly.offline as py
-import plotly.graph_objs as go
-
 from kindel import kindel
 
 
@@ -36,8 +33,8 @@ def parse_records(ref_id, ref_len, records):
     clip_end_weights = [{'A':0, 'T':0, 'G':0, 'C':0, 'N':0} for p in range(ref_len)]
     clip_starts = [0] * (ref_len + 1)
     clip_ends = [0] * (ref_len + 1)
-    insertions = [defaultdict(int) for p in range(ref_len)]
-    deletions = [0] * ref_len
+    insertions = [defaultdict(int) for p in range(ref_len + 1)]
+    deletions = [0] * (ref_len + 1)
     for record in tqdm.tqdm(records, desc='loading sequences'): # Progress bar
         q_pos = 0 
         r_pos = record.pos-1  # Zero indexed genome coordinates
@@ -276,12 +273,12 @@ def consensus_sequence(weights, clip_start_weights, clip_end_weights, insertions
             consensus_seq += 'N'
             changes[pos] = 'N'
         else:
+            if ins_freq > threshold_weight_freq:
+                insertion = consensus(insertions[pos])
+                consensus_seq += insertion[0].lower() if not insertion[3] else 'N'
+                changes[pos] = 'I'
             pos_consensus = consensus(weight)
             consensus_seq += pos_consensus[0] if not pos_consensus[3] else 'N'
-        if ins_freq > threshold_weight_freq:
-            insertion = consensus(insertions[pos])
-            consensus_seq += insertion[0].lower() if not insertion[3] else 'N'
-            changes[pos] = 'I'
     if trim_ends:
         consensus_seq = consensus_seq.strip('N')
     if uppercase:
@@ -510,6 +507,8 @@ def parse_variants(*args):
 
 
 def plotly_variants(ids_data):
+    import plotly.offline as py
+    import plotly.graph_objs as go
     traces = []
     for id, data in sorted(ids_data.items()):
         traces.append(

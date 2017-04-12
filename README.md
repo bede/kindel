@@ -1,9 +1,9 @@
 # Kindel – indel-aware offline consensus calling for nucleotide alignments
 [![PyPI version](https://badge.fury.io/py/kindel.svg)](https://badge.fury.io/py/kindel)
 
-Kindel is a simple consensus caller which takes a SAM/BAM file as input and generates a *single chromosome* consensus sequence in fasta format. Unlike similar tools it correctly reconciles small indels described in CIGAR fields. **An experimental feature `--fix-gaps` can also reconcile longer gaps and consensus indels by leveraging context from unaligned (soft-clipped) regions of sequences.**
+Kindel is a simple consensus caller which takes a headed SAM/BAM file as input and generates a *single chromosome* consensus in fasta format. Unlike similar tools it correctly reconciles small indels described in CIGAR fields. **An experimental feature `--fix-gaps` can reconcile longer gaps and consensus insertions by leveraging context from unaligned (soft-clipped) regions of sequences.**
 
-Existing consensus calling approaches are complicated and often involve a variant calling step. While an [elegant and sophisticated streaming approach](https://github.com/karel-brinda/ococo) was recently released, it cannot reconcile indels.
+Existing consensus calling approaches are complicated and often involve a variant calling step. While an [elegant streaming approach](https://github.com/karel-brinda/ococo) was recently released, it cannot reconcile indels.
 
 
 ## Installation
@@ -121,8 +121,8 @@ Please let me know if you run into problems by opening a GitHub issue, [tweeting
 ## Features
 - [x] Reconciliation of CIGAR described insertions and deletions
 - [x] Gap closure (`--fix-gaps`) using soft-clipped alignment context (not yet in tagged release)
-- [ ] Support / test against SAMs from a variety of aligners
 - [ ] Support mutiple reference sequences (needs testing)
+- [ ] Support / test against SAMs from a variety of aligners
 - [ ] Substitution only mode (`--ignore-indels`)
 - [ ] Frequency based variant calling with `kindel variants`
 - [ ] Plotting
