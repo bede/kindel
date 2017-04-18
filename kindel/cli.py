@@ -68,7 +68,13 @@ def plot_clips(bam_path: 'path to SAM/BAM file'):
 
 def main():
     parser = argh.ArghParser()
-    parser.add_commands([consensus, weights, features, variants, plot_depth, plot_variants, plot_clips])
+    parser.add_commands([consensus,
+                         weights,
+                         features,
+                         variants,
+                         plot_depth,
+                         plot_variants,
+                         plot_clips])
     parser.dispatch()
 
 
