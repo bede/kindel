@@ -44,7 +44,7 @@ def plot(coverage, l_clip_starts, r_clip_starts):
 
 if __name__ == '__main__':
     print(sys.argv[1])
-    aln = kindel.parse_alignment(sys.argv[1])
+    aln = list(kindel.parse_bam(sys.argv[1]).items())[0][1]
     cov = coverage(aln.weights)
     cov_smoothed = pd.Series(cov).rolling(window=10).mean().tolist()
     plot(cov_smoothed, aln.clip_starts, aln.clip_ends)

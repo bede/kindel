@@ -17,8 +17,6 @@ from Bio.SeqRecord import SeqRecord
 import numpy as np
 import pandas as pd
 
-from kindel import kindel
-
 
 def parse_records(ref_id, ref_len, records):
     '''
@@ -264,11 +262,13 @@ def consensus_sequence(weights, clip_start_weights, clip_end_weights, insertions
             consensus_seq += gap_consensuses[pos]
             gap_i = gap_starts.index(pos)
             skip_pos = gaps[gap_i].end-pos
+
         elif skip_pos:
             skip_pos -= 1
             continue
         elif del_freq > threshold_weight_freq:
             changes[pos] = 'D'
+
         elif coverage < min_depth:
             consensus_seq += 'N'
             changes[pos] = 'N'
@@ -362,7 +362,7 @@ def weights(bam_path: 'path to SAM/BAM file',
         lower_ci, upper_ci = scipy.stats.beta.interval(1-alpha, count+0.5, nobs-count+0.5)
         return lower_ci, upper_ci
     
-    refs_alns = kindel.parse_bam(bam_path)
+    refs_alns = parse_bam(bam_path)
     weights_fmt = []
     for ref, aln in refs_alns.items():
         weights_fmt.extend([dict(w, ref=ref, pos=i) for i, w in enumerate(aln.weights, start=1)])
@@ -393,7 +393,7 @@ def features(bam_path: 'path to SAM/BAM file'):
     Returns DataFrame of relative per-site nucleotide frequencies, insertions, deletions and entropy
     '''
     
-    refs_alns = kindel.parse_bam(bam_path)
+    refs_alns = parse_bam(bam_path)
     weights_fmt = []
     for ref, aln in refs_alns.items():
         weights_fmt.extend([dict(w, ref=ref, pos=i) for i, w in enumerate(aln.weights, start=1)])
@@ -424,13 +424,13 @@ def variants(bam_path: 'path to SAM/BAM file',
     Returns DataFrame of single nucleotide variant frequencies exceeding specified frequency
     thresholds from an aligned BAM
     '''
-    weights_df = kindel.weights(bam_path, no_confidence=True)
+    weights_df = weights(bam_path, no_confidence=True)
     weights = weights_df[['A','C','G','T']].to_dict('records')
     variant_sites = []
     
     for i, weight in enumerate(weights):
         depth = sum(weight.values())
-        consensus = kindel.consensus(weight)
+        consensus = consensus(weight)
         alt_weight = {nt:w for nt, w in weight.items() if nt != consensus[0]}
         alt_weight_rel = {nt:w/depth for nt, w in alt_weight.items() if depth}
         alt_depths = alt_weight.values()
@@ -534,6 +534,42 @@ def plotly_variants(ids_data):
 
     fig = go.Figure(data=traces, layout=layout)
     py.plot(fig, filename='variants.html')
+
+
+def plotly_clips(bam_path):
+    import plotly.offline as py
+    import plotly.graph_objs as go
+    aln = list(parse_bam(bam_path).items())[0][1]
+    cov = [sum(weight.values()) for weight in aln.weights]
+    cov_smoothed = pd.Series(cov).rolling(window=10).mean().tolist()
+    x_axis = list(range(9100))
+    t0 = go.Scattergl(
+        x = x_axis,
+        y = cov_smoothed,
+        mode = 'lines',
+        name = 'coverage')
+    t1 = go.Scattergl(
+        x = x_axis,
+        y = aln.clip_starts,
+        mode = 'markers',
+        name = 'left clip starts')
+    t2 = go.Scattergl(
+        x = x_axis,
+        y = aln.clip_ends,
+        mode = 'markers',
+        name = 'right clip starts')
+    layout = go.Layout(
+        xaxis=dict(
+            type='linear',
+            autorange=True),
+        yaxis=dict(
+            type='linear',
+            autorange=True))
+    data = [t0, t1, t2]
+    fig = go.Figure(data=data, layout=layout)
+    out_fn = os.path.splitext(os.path.split(bam_path)[1])[0]
+    py.plot(fig, filename=out_fn + '.clips.html')
+
 
 
 if __name__ == '__main__':
