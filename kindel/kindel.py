@@ -17,6 +17,8 @@ from Bio.SeqRecord import SeqRecord
 import numpy as np
 import pandas as pd
 
+from kindel import kindel
+
 
 def parse_records(ref_id, ref_len, records):
     '''
@@ -68,14 +70,11 @@ def parse_records(ref_id, ref_len, records):
                             clip_start_weights[r_pos][q_nt] += 1
                             r_pos += 1
                             q_pos += 1
-    clip_start_cov = [sum({nt:w[nt] for nt in list('ACGT')}.values()) for w in clip_start_weights]
-    clip_end_cov = [sum({nt:w[nt] for nt in list('ACGT')}.values()) for w in clip_end_weights]
-    clip_cov = list(map(lambda x, y: x+y, clip_start_cov, clip_end_cov))
+    
     alignment = namedtuple('alignment', ['ref_id', 'weights', 'insertions', 'deletions',
-                           'clip_starts', 'clip_ends', 'clip_start_weights', 'clip_end_weights',
-                           'clip_start_cov', 'clip_end_cov', 'clip_cov'])
+                           'clip_starts', 'clip_ends', 'clip_start_weights', 'clip_end_weights'])
     return alignment(ref_id, weights, insertions, deletions, clip_starts, clip_ends,
-                     clip_start_weights, clip_end_weights, clip_start_cov, clip_end_cov, clip_cov)
+                     clip_start_weights, clip_end_weights)
 
 
 def parse_bam(bam_path):
@@ -94,7 +93,7 @@ def parse_bam(bam_path):
     return alignments
 
 
-def find_gaps(weights, clip_starts, clip_ends, min_depth):
+def find_gaps(weights, clip_starts, clip_ends, threshold_weight, min_depth):
     '''
     Return list of inclusive soft-clipped consensus gap coordinates as namedtuples. 
     '''
@@ -103,13 +102,13 @@ def find_gaps(weights, clip_starts, clip_ends, min_depth):
     coverage = [sum({nt:w[nt] for nt in list('ACGT')}.values()) for w in weights]
     gap_open = False
     for i, (cov, clip_s, clip_e) in enumerate(zip(coverage, clip_starts, clip_ends)):
-        threshold_freq = int(max(cov*0.5, min_depth))
-        if clip_s >= threshold_freq and not gap_open and i:
-            # print(clip_s, threshold_freq)
+        threshold_weight_freq = int(max(cov*threshold_weight, min_depth))
+        if clip_s >= threshold_weight_freq and not gap_open and i:
+            # print(clip_s, threshold_weight_freq)
             gap_start = i
             gap_open = True
-        elif gap_open and clip_e >= threshold_freq and i:
-            # print(clip_s, threshold_freq)
+        elif gap_open and clip_e >= threshold_weight_freq and i:
+            # print(clip_s, threshold_weight_freq)
             gap_end = i
             gaps.append(gap(gap_start, gap_end))
             gap_open = False
@@ -250,7 +249,7 @@ def reconcile_gaps(gaps, weights, clip_start_weights, clip_end_weights, min_dept
 
 
 def consensus_sequence(weights, clip_start_weights, clip_end_weights, insertions, deletions, gaps,
-                       gap_consensuses, fix_gaps, trim_ends, min_depth, uppercase):
+                       gap_consensuses, fix_gaps, trim_ends, threshold_weight, min_depth, uppercase):
     consensus_seq = ''
     changes = [None] * len(weights)
     gap_starts = [g.start for g in gaps] if fix_gaps else []
@@ -260,21 +259,23 @@ def consensus_sequence(weights, clip_start_weights, clip_end_weights, insertions
         ins_freq = sum(insertions[pos].values()) if insertions[pos] else 0
         del_freq = deletions[pos]
         coverage = sum({nt: weight[nt] for nt in list('ACGT')}.values())
-        threshold_freq = coverage * 0.5
+        threshold_weight_freq = coverage * threshold_weight
         if pos in gap_starts and pos in gap_consensuses:
             consensus_seq += gap_consensuses[pos]
             gap_i = gap_starts.index(pos)
             skip_pos = gaps[gap_i].end-pos
+
         elif skip_pos:
             skip_pos -= 1
             continue
-        elif del_freq > threshold_freq:
+        elif del_freq > threshold_weight_freq:
             changes[pos] = 'D'
+
         elif coverage < min_depth:
             consensus_seq += 'N'
             changes[pos] = 'N'
         else:
-            if ins_freq > threshold_freq:
+            if ins_freq > threshold_weight_freq:
                 insertion = consensus(insertions[pos])
                 consensus_seq += insertion[0].lower() if not insertion[3] else 'N'
                 changes[pos] = 'I'
@@ -292,7 +293,7 @@ def consensus_seqrecord(consensus, ref_id):
 
 
 def build_report(weights, changes, gaps, gap_consensuses, bam_path, fix_gaps, trim_ends,
-                 min_depth, closure_k, uppercase):
+                 threshold_weight, min_depth, closure_k, uppercase):
     coverage = [sum({nt:w[nt] for nt in list('ACGT')}.values()) for w in weights]
     ambiguous_sites = []
     insertion_sites = []
@@ -312,6 +313,7 @@ def build_report(weights, changes, gaps, gap_consensuses, bam_path, fix_gaps, tr
     report += '- fix_gaps: {}\n'.format(fix_gaps)
     report += '- trim_ends: {}\n'.format(trim_ends)
     report += '- uppercase: {}\n'.format(uppercase)
+    report += '- threshold_weight: {}\n'.format(threshold_weight)
     report += '- min_depth: {}\n'.format(min_depth)
     report += '- closure_k: {}\n'.format(closure_k)
     report += 'min,max observed depth[50:-50]: {},{}\n'.format(min(coverage[50:-50]), max(coverage))
@@ -324,14 +326,15 @@ def build_report(weights, changes, gaps, gap_consensuses, bam_path, fix_gaps, tr
     return report
 
 
-def bam_to_consensus(bam_path, fix_gaps=False, trim_ends=False, min_depth=2,
+def bam_to_consensus(bam_path, fix_gaps=False, trim_ends=False, threshold_weight=0.5, min_depth=2,
                      closure_k=7, uppercase=False, reporting=True):
     refs_consensuses = []
     refs_changes = {}
     # print(list(parse_bam(bam_path).keys()))
     for ref_id, aln in parse_bam(bam_path).items():
         if fix_gaps:
-            gaps = find_gaps(aln.weights, aln.clip_starts, aln.clip_ends, min_depth)
+            gaps = find_gaps(aln.weights, aln.clip_starts, aln.clip_ends,
+                             threshold_weight, min_depth)
             gap_consensuses = reconcile_gaps(gaps, aln.weights, aln.clip_start_weights,
                                              aln.clip_end_weights, min_depth, closure_k)
         else:
@@ -340,9 +343,9 @@ def bam_to_consensus(bam_path, fix_gaps=False, trim_ends=False, min_depth=2,
         consensus, changes = consensus_sequence(aln.weights, aln.clip_start_weights,
                                                 aln.clip_end_weights, aln.insertions, aln.deletions,
                                                 gaps, gap_consensuses, fix_gaps, trim_ends,
-                                                min_depth, uppercase)
+                                                threshold_weight, min_depth, uppercase)
         report = build_report(aln.weights, changes, gaps, gap_consensuses, bam_path, fix_gaps,
-                              trim_ends, min_depth, closure_k, uppercase)
+                              trim_ends, threshold_weight, min_depth, closure_k, uppercase)
     refs_consensuses.append(consensus_seqrecord(consensus, ref_id))
     refs_changes[ref_id] = changes
     result = namedtuple('result', ['consensuses', 'refs_changes', 'report'])
@@ -361,7 +364,7 @@ def weights(bam_path: 'path to SAM/BAM file',
         lower_ci, upper_ci = scipy.stats.beta.interval(1-alpha, count+0.5, nobs-count+0.5)
         return lower_ci, upper_ci
     
-    refs_alns = parse_bam(bam_path)
+    refs_alns = kindel.parse_bam(bam_path)
     weights_fmt = []
     for ref, aln in refs_alns.items():
         weights_fmt.extend([dict(w, ref=ref, pos=i) for i, w in enumerate(aln.weights, start=1)])
@@ -392,7 +395,7 @@ def features(bam_path: 'path to SAM/BAM file'):
     Returns DataFrame of relative per-site nucleotide frequencies, insertions, deletions and entropy
     '''
     
-    refs_alns = parse_bam(bam_path)
+    refs_alns = kindel.parse_bam(bam_path)
     weights_fmt = []
     for ref, aln in refs_alns.items():
         weights_fmt.extend([dict(w, ref=ref, pos=i) for i, w in enumerate(aln.weights, start=1)])
@@ -423,13 +426,13 @@ def variants(bam_path: 'path to SAM/BAM file',
     Returns DataFrame of single nucleotide variant frequencies exceeding specified frequency
     thresholds from an aligned BAM
     '''
-    weights_df = weights(bam_path, no_confidence=True)
+    weights_df = kindel.weights(bam_path, no_confidence=True)
     weights = weights_df[['A','C','G','T']].to_dict('records')
     variant_sites = []
     
     for i, weight in enumerate(weights):
         depth = sum(weight.values())
-        consensus = consensus(weight)
+        consensus = kindel.consensus(weight)
         alt_weight = {nt:w for nt, w in weight.items() if nt != consensus[0]}
         alt_weight_rel = {nt:w/depth for nt, w in alt_weight.items() if depth}
         alt_depths = alt_weight.values()
@@ -533,57 +536,6 @@ def plotly_variants(ids_data):
 
     fig = go.Figure(data=traces, layout=layout)
     py.plot(fig, filename='variants.html')
-
-
-def plotly_clips(bam_path):
-    import plotly.offline as py
-    import plotly.graph_objs as go
-    aln = list(parse_bam(bam_path).items())[0][1]
-    cov = [sum(weight.values()) for weight in aln.weights]
-    cov_smoothed = pd.Series(cov).rolling(window=10).mean().tolist()
-    x_axis = list(range(9100))
-    t0 = go.Scattergl(
-        x = x_axis,
-        y = cov_smoothed,
-        mode = 'lines',
-        name = 'coverage')
-    t1 = go.Scattergl(
-        x = x_axis,
-        y = aln.clip_starts,
-        mode = 'markers',
-        name = 'left clip starts')
-    t2 = go.Scattergl(
-        x = x_axis,
-        y = aln.clip_ends,
-        mode = 'markers',
-        name = 'right clip starts')
-    t3 = go.Scattergl(
-        x = x_axis,
-        y = aln.clip_start_cov,
-        mode = 'markers',
-        name = 'left clip coverage')
-    t4 = go.Scattergl(
-        x = x_axis,
-        y = aln.clip_end_cov,
-        mode = 'markers',
-        name = 'right clip coverage')
-    t5 = go.Scattergl(
-        x = x_axis,
-        y = aln.clip_cov,
-        mode = 'markers',
-        name = 'l+r clip coverage')
-    layout = go.Layout(
-        xaxis=dict(
-            type='linear',
-            autorange=True),
-        yaxis=dict(
-            type='linear',
-            autorange=True))
-    data = [t0, t1, t2, t3, t4, t5]
-    fig = go.Figure(data=data, layout=layout)
-    out_fn = os.path.splitext(os.path.split(bam_path)[1])[0]
-    py.plot(fig, filename=out_fn + '.clips.html')
-
 
 
 if __name__ == '__main__':
