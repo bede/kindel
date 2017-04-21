@@ -94,17 +94,73 @@ def parse_bam(bam_path):
     return alignments
 
 
-def find_gaps(weights, clip_starts, clip_ends, min_depth):
-    '''
-    Return list of inclusive soft-clipped consensus gap coordinates as namedtuples. 
-    '''
+def clip_dominant_consensuses(weights, clip_start_cov, clip_end_cov, min_depth, terminal_mask=50):
+    masked_positions = (list(range(0, terminal_mask)) +
+                       list(range(len(ten.weights)-terminal_mask, len(ten.weights))))
+    regions_r = [] # read right-clipped / left of low coverage region
+    regions_l = []
+    for pos, (w, s, s_cov) in enumerate(zip(weights, clip_start_cov)):
+        if pos not in masked_positions and s/sum(w.values()) > 0.5:
+            regions_r.append(pos)
+
+
+def clip_start_consensuses(weights, clip_start_weights, clip_start_cov, clip_cov_decay_threshold=0.5):
+    positions = list(range(len(weights)))
+    masked_positions = positions[:50] + positions[-50:]
+    regions = []
+    region_active = False
+    for pos, sc, w in zip(positions, clip_start_cov, weights):
+        if sc/sum(w.values()) > 0.5 and pos not in masked_positions and not region_active:
+            region = {'start': pos, 'clip_cns': ''}
+            start_pos = pos
+            region_active = True
+            for pos_, (sc_, sw_, w_) in enumerate(zip(clip_start_cov[pos:],
+                                                      clip_start_weights[pos:], weights[pos:])):
+                if sc_ > sum(w_.values()) * clip_cov_decay_threshold:
+                    region['clip_cns'] += consensus(sw_)[0]
+                else:
+                    region['end'] =  start_pos + pos_
+                    break
+            regions.append(region)
+    return regions
+
+
+def clip_end_consensuses(weights, clip_end_weights, clip_end_cov, clip_cov_decay_threshold=0.5):
+    positions = list(range(len(weights)))
+    masked_positions = positions[:50] + positions[-50:]
+    reversed_weights = list(sorted(zip(positions, clip_end_cov, clip_end_weights, weights),
+                                   key=lambda x: x[0], reverse=True))
+    regions = []
+    region_active = False
+    for i, (pos, ec, ew, w) in enumerate(reversed_weights):
+        if ec/sum(w.values()) > 0.5 and pos not in masked_positions and not region_active:
+            region = {'end': pos+1}  # Start with end since we're iterating in reverse
+            region_active = True
+            rev_clip_cns = None
+            for pos_, ec_, ew_, w_ in reversed_weights[len(positions)-pos:]:
+                if ec_ > sum(w_.values()) * clip_cov_decay_threshold:
+                    if not rev_clip_cns:  # Add first base to account for lag in clip coverage
+                        rev_clip_cns = consensus(clip_end_weights[pos_+1])[0]
+                    rev_clip_cns += consensus(ew_)[0]
+                else:
+                    region['start'] =  pos_
+                    region['clip_cns'] = rev_clip_cns[::-1]
+                    break
+            regions.append(region)
+    return regions
+
+
+# find_gaps() > find_concordant_alternatives()
+# For destruction
+def discordant_sites(weights, clip_starts, clip_ends, min_depth, terminal_mask=50):
+    masked_positions = list(range(0, terminal_mask)) + list(range(len(ten.weights)-terminal_mask, len(ten.weights)))
     gaps = []
     gap = namedtuple('gap', ['start', 'end'])
     coverage = [sum({nt:w[nt] for nt in list('ACGT')}.values()) for w in weights]
     gap_open = False
     for i, (cov, clip_s, clip_e) in enumerate(zip(coverage, clip_starts, clip_ends)):
         threshold_freq = int(max(cov*0.5, min_depth))
-        if clip_s >= threshold_freq and not gap_open and i:
+        if clip_s > threshold_freq and not gap_open and i:
             # print(clip_s, threshold_freq)
             gap_start = i
             gap_open = True
@@ -113,6 +169,7 @@ def find_gaps(weights, clip_starts, clip_ends, min_depth):
             gap_end = i
             gaps.append(gap(gap_start, gap_end))
             gap_open = False
+    # print(gaps)
     return gaps
 
 
@@ -544,7 +601,7 @@ def plotly_clips(bam_path):
     x_axis = list(range(9100))
     t0 = go.Scattergl(
         x = x_axis,
-        y = cov_smoothed,
+        y = cov,
         mode = 'lines',
         name = 'coverage')
     t1 = go.Scattergl(
@@ -560,17 +617,17 @@ def plotly_clips(bam_path):
     t3 = go.Scattergl(
         x = x_axis,
         y = aln.clip_start_cov,
-        mode = 'markers',
+        mode = 'lines',
         name = 'left clip coverage')
     t4 = go.Scattergl(
         x = x_axis,
         y = aln.clip_end_cov,
-        mode = 'markers',
+        mode = 'lines',
         name = 'right clip coverage')
     t5 = go.Scattergl(
         x = x_axis,
         y = aln.clip_cov,
-        mode = 'markers',
+        mode = 'lines',
         name = 'l+r clip coverage')
     layout = go.Layout(
         xaxis=dict(
