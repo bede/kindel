@@ -33,6 +33,7 @@ def parse_records(ref_id, ref_len, records):
     clip_ends = [0] * (ref_len + 1)
     insertions = [defaultdict(int) for p in range(ref_len + 1)]
     deletions = [0] * (ref_len + 1)
+    substitutions = [0] * ref_len
     for record in tqdm.tqdm(records, desc='loading sequences'): # Progress bar
         q_pos = 0 
         r_pos = record.pos-1  # Zero indexed genome coordinates
@@ -105,12 +106,14 @@ def clip_dominant_consensuses(weights, clip_start_cov, clip_end_cov, min_depth, 
 
 
 def clip_start_consensuses(weights, clip_start_weights, clip_start_cov, clip_cov_decay_threshold=0.5):
+    # Add min cov requirement??
     positions = list(range(len(weights)))
     masked_positions = positions[:50] + positions[-50:]
     regions = []
     region_active = False
     for pos, sc, w in zip(positions, clip_start_cov, weights):
-        if sc/sum(w.values()) > 0.5 and pos not in masked_positions and not region_active:
+        sum_weights = sum(w.values())
+        if sum_weights and sc/sum_weights > 0.5 and pos not in masked_positions and not region_active:
             region = {'start': pos, 'clip_cns': ''}
             start_pos = pos
             region_active = True
@@ -306,32 +309,27 @@ def reconcile_gaps(gaps, weights, clip_start_weights, clip_end_weights, min_dept
     return gap_consensuses
 
 
-def consensus_sequence(weights, clip_start_weights, clip_end_weights, insertions, deletions, gaps,
-                       gap_consensuses, fix_gaps, trim_ends, min_depth, uppercase):
+def consensus_sequence(weights, clip_start_weights, clip_end_weights, insertions, deletions,
+                       trim_ends, min_depth, uppercase):
     consensus_seq = ''
     changes = [None] * len(weights)
-    gap_starts = [g.start for g in gaps] if fix_gaps else []
-    skip_pos = False
-
     for pos, weight in tqdm.tqdm(enumerate(weights), total=len(weights), desc='building consensus'):
         ins_freq = sum(insertions[pos].values()) if insertions[pos] else 0
         del_freq = deletions[pos]
         coverage = sum({nt: weight[nt] for nt in list('ACGT')}.values())
+        try:
+            coverage_next = sum({nt: weights[pos+1][nt] for nt in list('ACGT')}.values())
+        except IndexError:
+            coverage_next = 0
         threshold_freq = coverage * 0.5
-        if pos in gap_starts and pos in gap_consensuses:
-            consensus_seq += gap_consensuses[pos]
-            gap_i = gap_starts.index(pos)
-            skip_pos = gaps[gap_i].end-pos
-        elif skip_pos:
-            skip_pos -= 1
-            continue
-        elif del_freq > threshold_freq:
+        indel_threshold_freq = min(threshold_freq, coverage_next * 0.5)
+        if del_freq > threshold_freq:
             changes[pos] = 'D'
         elif coverage < min_depth:
             consensus_seq += 'N'
             changes[pos] = 'N'
         else:
-            if ins_freq > threshold_freq:
+            if ins_freq > indel_threshold_freq:
                 insertion = consensus(insertions[pos])
                 consensus_seq += insertion[0].lower() if not insertion[3] else 'N'
                 changes[pos] = 'I'
@@ -396,8 +394,7 @@ def bam_to_consensus(bam_path, fix_gaps=False, trim_ends=False, min_depth=2,
         # print(ref_id, file=sys.stderr)
         consensus, changes = consensus_sequence(aln.weights, aln.clip_start_weights,
                                                 aln.clip_end_weights, aln.insertions, aln.deletions,
-                                                gaps, gap_consensuses, fix_gaps, trim_ends,
-                                                min_depth, uppercase)
+                                                trim_ends, min_depth, uppercase)
         report = build_report(aln.weights, changes, gaps, gap_consensuses, bam_path, fix_gaps,
                               trim_ends, min_depth, closure_k, uppercase)
     refs_consensuses.append(consensus_seqrecord(consensus, ref_id))
@@ -597,38 +594,43 @@ def plotly_clips(bam_path):
     import plotly.graph_objs as go
     aln = list(parse_bam(bam_path).items())[0][1]
     cov = [sum(weight.values()) for weight in aln.weights]
-    cov_smoothed = pd.Series(cov).rolling(window=10).mean().tolist()
-    x_axis = list(range(9100))
+    ins = [sum(i.values()) for i in aln.insertions]
+    x_axis = list(range(len(cov)))
     t0 = go.Scattergl(
         x = x_axis,
         y = cov,
         mode = 'lines',
-        name = 'coverage')
+        name = 'aligned coverage')
     t1 = go.Scattergl(
         x = x_axis,
         y = aln.clip_starts,
         mode = 'markers',
-        name = 'left clip starts')
+        name = 'clip starts')
     t2 = go.Scattergl(
         x = x_axis,
         y = aln.clip_ends,
         mode = 'markers',
-        name = 'right clip starts')
+        name = 'clip ends')
     t3 = go.Scattergl(
         x = x_axis,
         y = aln.clip_start_cov,
         mode = 'lines',
-        name = 'left clip coverage')
+        name = 'clip start coverage')
     t4 = go.Scattergl(
         x = x_axis,
         y = aln.clip_end_cov,
         mode = 'lines',
-        name = 'right clip coverage')
+        name = 'clip end coverage')
     t5 = go.Scattergl(
         x = x_axis,
-        y = aln.clip_cov,
+        y = ins,
         mode = 'lines',
-        name = 'l+r clip coverage')
+        name = 'insertions')
+    t6 = go.Scattergl(
+        x = x_axis,
+        y = aln.deletions,
+        mode = 'lines',
+        name = 'deletions')
     layout = go.Layout(
         xaxis=dict(
             type='linear',
@@ -636,7 +638,7 @@ def plotly_clips(bam_path):
         yaxis=dict(
             type='linear',
             autorange=True))
-    data = [t0, t1, t2, t3, t4, t5]
+    data = [t0, t1, t2, t3, t4, t5, t6]
     fig = go.Figure(data=data, layout=layout)
     out_fn = os.path.splitext(os.path.split(bam_path)[1])[0]
     py.plot(fig, filename=out_fn + '.clips.html')
