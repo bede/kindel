@@ -1,11 +1,13 @@
 # Author: Bede Constantinides - b|at|bede|dot|im, @beconstant
 # License: GPL V3
 
+import io
 import os
 import sys
 import argh
 import tqdm
 import simplesam
+import subprocess
 import scipy.stats
 
 from collections import OrderedDict, defaultdict, namedtuple
@@ -33,7 +35,6 @@ def parse_records(ref_id, ref_len, records):
     clip_ends = [0] * (ref_len + 1)
     insertions = [defaultdict(int) for p in range(ref_len + 1)]
     deletions = [0] * (ref_len + 1)
-    substitutions = [0] * ref_len
     for record in tqdm.tqdm(records, desc='loading sequences'): # Progress bar
         q_pos = 0 
         r_pos = record.pos-1  # Zero indexed genome coordinates
@@ -159,10 +160,10 @@ def discordant_sites(weights, clip_starts, clip_ends, min_depth, terminal_mask=5
     masked_positions = list(range(0, terminal_mask)) + list(range(len(ten.weights)-terminal_mask, len(ten.weights)))
     gaps = []
     gap = namedtuple('gap', ['start', 'end'])
-    coverage = [sum({nt:w[nt] for nt in list('ACGT')}.values()) for w in weights]
+    aligned_depth = [sum({nt:w[nt] for nt in list('ACGT')}.values()) for w in weights]
     gap_open = False
-    for i, (cov, clip_s, clip_e) in enumerate(zip(coverage, clip_starts, clip_ends)):
-        threshold_freq = int(max(cov*0.5, min_depth))
+    for i, (aln_dep, clip_s, clip_e) in enumerate(zip(aligned_depth, clip_starts, clip_ends)):
+        threshold_freq = int(max(aln_dep*0.5, min_depth))
         if clip_s > threshold_freq and not gap_open and i:
             # print(clip_s, threshold_freq)
             gap_start = i
@@ -184,9 +185,9 @@ def consensus(weight):
     base, frequency = max(weight.items(), key=lambda x:x[1]) if sum(weight.values()) else ('N', 0)
     weight_sans_consensus = {k:d for k, d in weight.items() if k != base}
     tie = True if frequency and frequency in weight_sans_consensus.values() else False
-    coverage = sum(weight.values())
-    prop = round(frequency/coverage, 2) if coverage else 0
-    return(base, frequency, prop, tie)
+    aligned_depth = sum(weight.values())
+    proportion = round(frequency/aligned_depth, 2) if aligned_depth else 0
+    return(base, frequency, proportion, tie)
 
 
 def s_overhang_consensus(clip_start_weights, start_pos, min_depth, max_len=500):
@@ -316,16 +317,16 @@ def consensus_sequence(weights, clip_start_weights, clip_end_weights, insertions
     for pos, weight in tqdm.tqdm(enumerate(weights), total=len(weights), desc='building consensus'):
         ins_freq = sum(insertions[pos].values()) if insertions[pos] else 0
         del_freq = deletions[pos]
-        coverage = sum({nt: weight[nt] for nt in list('ACGT')}.values())
+        aligned_depth = sum({nt: weight[nt] for nt in list('ACGT')}.values())
         try:
-            coverage_next = sum({nt: weights[pos+1][nt] for nt in list('ACGT')}.values())
+            aligned_depth_next = sum({nt: weights[pos+1][nt] for nt in list('ACGT')}.values())
         except IndexError:
-            coverage_next = 0
-        threshold_freq = coverage * 0.5
-        indel_threshold_freq = min(threshold_freq, coverage_next * 0.5)
+            aligned_depth_next = 0
+        threshold_freq = aligned_depth * 0.5
+        indel_threshold_freq = min(threshold_freq, aligned_depth_next * 0.5)
         if del_freq > threshold_freq:
             changes[pos] = 'D'
-        elif coverage < min_depth:
+        elif aligned_depth < min_depth:
             consensus_seq += 'N'
             changes[pos] = 'N'
         else:
@@ -348,7 +349,7 @@ def consensus_seqrecord(consensus, ref_id):
 
 def build_report(weights, changes, gaps, gap_consensuses, bam_path, fix_gaps, trim_ends,
                  min_depth, closure_k, uppercase):
-    coverage = [sum({nt:w[nt] for nt in list('ACGT')}.values()) for w in weights]
+    aligned_depth = [sum({nt:w[nt] for nt in list('ACGT')}.values()) for w in weights]
     ambiguous_sites = []
     insertion_sites = []
     deletion_sites = []
@@ -369,7 +370,7 @@ def build_report(weights, changes, gaps, gap_consensuses, bam_path, fix_gaps, tr
     report += '- uppercase: {}\n'.format(uppercase)
     report += '- min_depth: {}\n'.format(min_depth)
     report += '- closure_k: {}\n'.format(closure_k)
-    report += 'min,max observed depth[50:-50]: {},{}\n'.format(min(coverage[50:-50]), max(coverage))
+    report += 'min,max observed depth[50:-50]: {},{}\n'.format(min(aligned_depth[50:-50]), max(aligned_depth))
     report += 'ambiguous sites: {}\n'.format(', '.join(ambiguous_sites))
     report += 'insertion sites: {}\n'.format(', '.join(insertion_sites))
     report += 'deletion sites: {}\n'.format(', '.join(deletion_sites))
@@ -407,7 +408,7 @@ def weights(bam_path: 'path to SAM/BAM file',
             relative: 'output relative nucleotide frequencies'=False,
             no_confidence: 'skip confidence calculation'=False):
     '''
-    Returns DataFrame of per-site nucleotide frequencies, coverage, consensus, lower bound of the
+    Returns DataFrame of per-site nucleotide frequencies, depth, consensus, lower bound of the
     99% consensus confidence interval, and Shannon entropy
     '''
     def binomial_ci(count, nobs, alpha=0.01):
@@ -589,48 +590,68 @@ def plotly_variants(ids_data):
     py.plot(fig, filename='variants.html')
 
 
+# def samtools_depth(bam_path):
+#     '''Return list of samtools reported depths (all positions, coverage limit 1m)'''
+#     cmd = subprocess.run('samtools depth -a -m 1000000 {}'.format(bam_path),
+#                          shell=True,
+#                          check=True,
+#                          stdout=subprocess.PIPE,
+#                          universal_newlines=True)
+#     depths_fh = io.StringIO(cmd.stdout)
+#     df = pd.read_table(depths_fh, sep='\t', names=['contig', 'pos', 'depth'])
+#     return df.depth.tolist()
+
+
 def plotly_clips(bam_path):
     import plotly.offline as py
     import plotly.graph_objs as go
     aln = list(parse_bam(bam_path).items())[0][1]
-    cov = [sum(weight.values()) for weight in aln.weights]
+    # depth = samtools_depth(bam_path)
+    aligned_depth = [sum(weight.values()) for weight in aln.weights]
+    # print(True if depth == aligned_depth else False)
     ins = [sum(i.values()) for i in aln.insertions]
-    x_axis = list(range(len(cov)))
-    t0 = go.Scattergl(
-        x = x_axis,
-        y = cov,
-        mode = 'lines',
-        name = 'aligned coverage')
-    t1 = go.Scattergl(
-        x = x_axis,
-        y = aln.clip_starts,
-        mode = 'markers',
-        name = 'clip starts')
-    t2 = go.Scattergl(
-        x = x_axis,
-        y = aln.clip_ends,
-        mode = 'markers',
-        name = 'clip ends')
-    t3 = go.Scattergl(
-        x = x_axis,
-        y = aln.clip_start_cov,
-        mode = 'lines',
-        name = 'clip start coverage')
-    t4 = go.Scattergl(
-        x = x_axis,
-        y = aln.clip_end_cov,
-        mode = 'lines',
-        name = 'clip end coverage')
-    t5 = go.Scattergl(
-        x = x_axis,
-        y = ins,
-        mode = 'lines',
-        name = 'insertions')
-    t6 = go.Scattergl(
-        x = x_axis,
-        y = aln.deletions,
-        mode = 'lines',
-        name = 'deletions')
+    x_axis = list(range(len(aligned_depth)))
+    traces = [
+        # go.Scattergl(
+        #     x = x_axis,
+        #     y = depth,
+        #     mode = 'lines',
+        #     name = 'Samtools depth'),
+        go.Scattergl(
+            x = x_axis,
+            y = aligned_depth,
+            mode = 'lines',
+            name = 'Aligned depth'),
+        go.Scattergl(
+            x = x_axis,
+            y = aln.clip_starts,
+            mode = 'markers',
+            name = 'Soft clip starts'),
+        go.Scattergl(
+            x = x_axis,
+            y = aln.clip_ends,
+            mode = 'markers',
+            name = 'Soft clip ends'),
+        go.Scattergl(
+            x = x_axis,
+            y = aln.clip_start_cov,
+            mode = 'lines',
+            name = 'Soft clip start coverage'),
+        go.Scattergl(
+            x = x_axis,
+            y = aln.clip_end_cov,
+            mode = 'lines',
+            name = 'Soft clip end coverage'),
+        go.Scattergl(
+            x = x_axis,
+            y = ins,
+            mode = 'lines',
+            name = 'Insertions'),
+        go.Scattergl(
+            x = x_axis,
+            y = aln.deletions,
+            mode = 'lines',
+            name = 'Deletions')]
     layout = go.Layout(
         xaxis=dict(
             type='linear',
@@ -638,8 +659,7 @@ def plotly_clips(bam_path):
         yaxis=dict(
             type='linear',
             autorange=True))
-    data = [t0, t1, t2, t3, t4, t5, t6]
-    fig = go.Figure(data=data, layout=layout)
+    fig = go.Figure(data=traces, layout=layout)
     out_fn = os.path.splitext(os.path.split(bam_path)[1])[0]
     py.plot(fig, filename=out_fn + '.clips.html')
 
