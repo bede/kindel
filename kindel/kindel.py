@@ -70,14 +70,25 @@ def parse_records(ref_id, ref_len, records):
                             clip_start_weights[r_pos][q_nt] += 1
                             r_pos += 1
                             q_pos += 1
-    clip_start_cov = [sum({nt:w[nt] for nt in list('ACGT')}.values()) for w in clip_start_weights]
-    clip_end_cov = [sum({nt:w[nt] for nt in list('ACGT')}.values()) for w in clip_end_weights]
-    clip_cov = list(map(lambda x, y: x+y, clip_start_cov, clip_end_cov))
+    aligned_depth = [sum(w.values()) for w in weights]
+    weights_consensus_seq = ''.join([consensus(w)[0] for w in weights])
+    discordant_depth = [sum({nt:w[nt]
+        for nt in [k for k in w.keys() if k != cns_nt]}.values())
+            for w, cns_nt in zip(weights, weights_consensus_seq)]
+    consensus_depth =  np.array(aligned_depth) - np.array(discordant_depth)
+    clip_start_depth = [sum({nt:w[nt] for nt in list('ACGT')}.values()) for w in clip_start_weights]
+    clip_end_depth = [sum({nt:w[nt] for nt in list('ACGT')}.values()) for w in clip_end_weights]
+    clip_depth = list(map(lambda x, y: x+y, clip_start_depth, clip_end_depth))
     alignment = namedtuple('alignment', ['ref_id', 'weights', 'insertions', 'deletions',
-                           'clip_starts', 'clip_ends', 'clip_start_weights', 'clip_end_weights',
-                           'clip_start_cov', 'clip_end_cov', 'clip_cov'])
-    return alignment(ref_id, weights, insertions, deletions, clip_starts, clip_ends,
-                     clip_start_weights, clip_end_weights, clip_start_cov, clip_end_cov, clip_cov)
+                                         'clip_starts', 'clip_ends',
+                                         'clip_start_weights', 'clip_end_weights',
+                                         'clip_start_depth', 'clip_end_depth',
+                                         'clip_depth', 'consensus_depth'])
+    return alignment(ref_id, weights, insertions, deletions,
+                     clip_starts, clip_ends,
+                     clip_start_weights, clip_end_weights,
+                     clip_start_depth, clip_end_depth,
+                     clip_depth, consensus_depth)
 
 
 def parse_bam(bam_path):
@@ -96,31 +107,31 @@ def parse_bam(bam_path):
     return alignments
 
 
-def clip_dominant_consensuses(weights, clip_start_cov, clip_end_cov, min_depth, terminal_mask=50):
+def clip_dominant_consensuses(weights, clip_start_depth, clip_end_depth, min_depth, terminal_mask=50):
     masked_positions = (list(range(0, terminal_mask)) +
                        list(range(len(ten.weights)-terminal_mask, len(ten.weights))))
     regions_r = [] # read right-clipped / left of low coverage region
     regions_l = []
-    for pos, (w, s, s_cov) in enumerate(zip(weights, clip_start_cov)):
+    for pos, (w, s, s_depth) in enumerate(zip(weights, clip_start_depth)):
         if pos not in masked_positions and s/sum(w.values()) > 0.5:
             regions_r.append(pos)
 
 
-def clip_start_consensuses(weights, clip_start_weights, clip_start_cov, clip_cov_decay_threshold=0.5):
+def clip_start_consensuses(weights, clip_start_weights, clip_start_depth, clip_depth_decay_threshold=0.5):
     # Add min cov requirement??
     positions = list(range(len(weights)))
     masked_positions = positions[:50] + positions[-50:]
     regions = []
     region_active = False
-    for pos, sc, w in zip(positions, clip_start_cov, weights):
+    for pos, sc, w in zip(positions, clip_start_depth, weights):
         sum_weights = sum(w.values())
         if sum_weights and sc/sum_weights > 0.5 and pos not in masked_positions and not region_active:
             region = {'start': pos, 'clip_cns': ''}
             start_pos = pos
             region_active = True
-            for pos_, (sc_, sw_, w_) in enumerate(zip(clip_start_cov[pos:],
+            for pos_, (sc_, sw_, w_) in enumerate(zip(clip_start_depth[pos:],
                                                       clip_start_weights[pos:], weights[pos:])):
-                if sc_ > sum(w_.values()) * clip_cov_decay_threshold:
+                if sc_ > sum(w_.values()) * clip_depth_decay_threshold:
                     region['clip_cns'] += consensus(sw_)[0]
                 else:
                     region['end'] =  start_pos + pos_
@@ -129,10 +140,10 @@ def clip_start_consensuses(weights, clip_start_weights, clip_start_cov, clip_cov
     return regions
 
 
-def clip_end_consensuses(weights, clip_end_weights, clip_end_cov, clip_cov_decay_threshold=0.5):
+def clip_end_consensuses(weights, clip_end_weights, clip_end_depth, clip_depth_decay_threshold=0.5):
     positions = list(range(len(weights)))
     masked_positions = positions[:50] + positions[-50:]
-    reversed_weights = list(sorted(zip(positions, clip_end_cov, clip_end_weights, weights),
+    reversed_weights = list(sorted(zip(positions, clip_end_depth, clip_end_weights, weights),
                                    key=lambda x: x[0], reverse=True))
     regions = []
     region_active = False
@@ -142,7 +153,7 @@ def clip_end_consensuses(weights, clip_end_weights, clip_end_cov, clip_cov_decay
             region_active = True
             rev_clip_cns = None
             for pos_, ec_, ew_, w_ in reversed_weights[len(positions)-pos:]:
-                if ec_ > sum(w_.values()) * clip_cov_decay_threshold:
+                if ec_ > sum(w_.values()) * clip_depth_decay_threshold:
                     if not rev_clip_cns:  # Add first base to account for lag in clip coverage
                         rev_clip_cns = consensus(clip_end_weights[pos_+1])[0]
                     rev_clip_cns += consensus(ew_)[0]
@@ -162,7 +173,7 @@ def discordant_sites(weights, clip_starts, clip_ends, min_depth, terminal_mask=5
     gap = namedtuple('gap', ['start', 'end'])
     aligned_depth = [sum({nt:w[nt] for nt in list('ACGT')}.values()) for w in weights]
     gap_open = False
-    for i, (aln_dep, clip_s, clip_e) in enumerate(zip(aligned_depth, clip_starts, clip_ends)):
+    for i, (aln_depth, clip_s, clip_e) in enumerate(zip(aligned_depth, clip_starts, clip_ends)):
         threshold_freq = int(max(aln_dep*0.5, min_depth))
         if clip_s > threshold_freq and not gap_open and i:
             # print(clip_s, threshold_freq)
@@ -324,6 +335,7 @@ def consensus_sequence(weights, clip_start_weights, clip_end_weights, insertions
             aligned_depth_next = 0
         threshold_freq = aligned_depth * 0.5
         indel_threshold_freq = min(threshold_freq, aligned_depth_next * 0.5)
+        # print(pos, del_freq, threshold_freq*2)
         if del_freq > threshold_freq:
             changes[pos] = 'D'
         elif aligned_depth < min_depth:
@@ -624,6 +636,21 @@ def plotly_clips(bam_path):
             name = 'Aligned depth'),
         go.Scattergl(
             x = x_axis,
+            y = aln.consensus_depth,
+            mode = 'lines',
+            name = 'Consensus depth'),
+        go.Scattergl(
+            x = x_axis,
+            y = aln.clip_start_depth,
+            mode = 'lines',
+            name = 'Soft clip start depth'),
+        go.Scattergl(
+            x = x_axis,
+            y = aln.clip_end_depth,
+            mode = 'lines',
+            name = 'Soft clip end depth'),
+        go.Scattergl(
+            x = x_axis,
             y = aln.clip_starts,
             mode = 'markers',
             name = 'Soft clip starts'),
@@ -634,23 +661,13 @@ def plotly_clips(bam_path):
             name = 'Soft clip ends'),
         go.Scattergl(
             x = x_axis,
-            y = aln.clip_start_cov,
-            mode = 'lines',
-            name = 'Soft clip start coverage'),
-        go.Scattergl(
-            x = x_axis,
-            y = aln.clip_end_cov,
-            mode = 'lines',
-            name = 'Soft clip end coverage'),
-        go.Scattergl(
-            x = x_axis,
             y = ins,
-            mode = 'lines',
+            mode = 'markers',
             name = 'Insertions'),
         go.Scattergl(
             x = x_axis,
             y = aln.deletions,
-            mode = 'lines',
+            mode = 'markers',
             name = 'Deletions')]
     layout = go.Layout(
         xaxis=dict(
