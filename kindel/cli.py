@@ -8,7 +8,7 @@ from kindel import kindel
 
 
 def consensus(bam_path: 'path to SAM/BAM file',
-              fix_gaps: 'attempt to reconcile reference at soft-clip boundaries'=False,
+              realign: 'attempt to reconstruct reference around soft-clip boundaries'=False,
               trim_ends: 'trim ambiguous nucleotides (Ns) from sequence ends'=False,
               threshold: 'consensus threshold weight'=0.5,
               min_depth: 'substitute Ns at coverage depths beneath this value'=2,
@@ -16,7 +16,7 @@ def consensus(bam_path: 'path to SAM/BAM file',
               uppercase: 'close gaps using uppercase alphabet'=False):
     '''Infer consensus sequence(s) from alignment in SAM/BAM format'''
     result = kindel.bam_to_consensus(bam_path,
-                                     fix_gaps,
+                                     realign,
                                      trim_ends,
                                      threshold,
                                      min_depth,

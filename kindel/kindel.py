@@ -107,16 +107,6 @@ def parse_bam(bam_path):
     return alignments
 
 
-def clip_dominant_consensuses(weights, clip_start_depth, clip_end_depth, min_depth, terminal_mask=50):
-    masked_positions = (list(range(0, terminal_mask)) +
-                       list(range(len(ten.weights)-terminal_mask, len(ten.weights))))
-    regions_r = [] # read right-clipped / left of low coverage region
-    regions_l = []
-    for pos, (w, s, s_depth) in enumerate(zip(weights, clip_start_depth)):
-        if pos not in masked_positions and s/sum(w.values()) > 0.5:
-            regions_r.append(pos)
-
-
 def clip_start_consensuses(weights, clip_start_weights, clip_start_depth, clip_depth_decay_threshold=0.5):
     # Add min cov requirement??
     positions = list(range(len(weights)))
@@ -163,29 +153,6 @@ def clip_end_consensuses(weights, clip_end_weights, clip_end_depth, clip_depth_d
                     break
             regions.append(region)
     return regions
-
-
-# find_gaps() > find_concordant_alternatives()
-# For destruction
-def discordant_sites(weights, clip_starts, clip_ends, min_depth, terminal_mask=50):
-    masked_positions = list(range(0, terminal_mask)) + list(range(len(ten.weights)-terminal_mask, len(ten.weights)))
-    gaps = []
-    gap = namedtuple('gap', ['start', 'end'])
-    aligned_depth = [sum({nt:w[nt] for nt in list('ACGT')}.values()) for w in weights]
-    gap_open = False
-    for i, (aln_depth, clip_s, clip_e) in enumerate(zip(aligned_depth, clip_starts, clip_ends)):
-        threshold_freq = int(max(aln_dep*0.5, min_depth))
-        if clip_s > threshold_freq and not gap_open and i:
-            # print(clip_s, threshold_freq)
-            gap_start = i
-            gap_open = True
-        elif gap_open and clip_e >= threshold_freq and i:
-            # print(clip_s, threshold_freq)
-            gap_end = i
-            gaps.append(gap(gap_start, gap_end))
-            gap_open = False
-    # print(gaps)
-    return gaps
 
 
 def consensus(weight):
@@ -359,7 +326,7 @@ def consensus_seqrecord(consensus, ref_id):
     return SeqRecord(Seq(consensus), id=ref_id + '_cns', description='')
 
 
-def build_report(weights, changes, gaps, gap_consensuses, bam_path, fix_gaps, trim_ends,
+def build_report(weights, changes, gaps, gap_consensuses, bam_path, realign, trim_ends,
                  min_depth, closure_k, uppercase):
     aligned_depth = [sum({nt:w[nt] for nt in list('ACGT')}.values()) for w in weights]
     ambiguous_sites = []
@@ -377,7 +344,7 @@ def build_report(weights, changes, gaps, gap_consensuses, bam_path, fix_gaps, tr
     report = '========================= REPORT ===========================\n'
     report += 'options:\n'
     report += '- bam_path: {}\n'.format(bam_path)
-    report += '- fix_gaps: {}\n'.format(fix_gaps)
+    report += '- realign: {}\n'.format(realign)
     report += '- trim_ends: {}\n'.format(trim_ends)
     report += '- uppercase: {}\n'.format(uppercase)
     report += '- min_depth: {}\n'.format(min_depth)
@@ -392,13 +359,13 @@ def build_report(weights, changes, gaps, gap_consensuses, bam_path, fix_gaps, tr
     return report
 
 
-def bam_to_consensus(bam_path, fix_gaps=False, trim_ends=False, min_depth=2,
+def bam_to_consensus(bam_path, realign=False, trim_ends=False, min_depth=2,
                      closure_k=7, uppercase=False, reporting=True):
     refs_consensuses = []
     refs_changes = {}
     # print(list(parse_bam(bam_path).keys()))
     for ref_id, aln in parse_bam(bam_path).items():
-        if fix_gaps:
+        if realign:
             gaps = find_gaps(aln.weights, aln.clip_starts, aln.clip_ends, min_depth)
             gap_consensuses = reconcile_gaps(gaps, aln.weights, aln.clip_start_weights,
                                              aln.clip_end_weights, min_depth, closure_k)
@@ -408,7 +375,7 @@ def bam_to_consensus(bam_path, fix_gaps=False, trim_ends=False, min_depth=2,
         consensus, changes = consensus_sequence(aln.weights, aln.clip_start_weights,
                                                 aln.clip_end_weights, aln.insertions, aln.deletions,
                                                 trim_ends, min_depth, uppercase)
-        report = build_report(aln.weights, changes, gaps, gap_consensuses, bam_path, fix_gaps,
+        report = build_report(aln.weights, changes, gaps, gap_consensuses, bam_path, realign,
                               trim_ends, min_depth, closure_k, uppercase)
     refs_consensuses.append(consensus_seqrecord(consensus, ref_id))
     refs_changes[ref_id] = changes
