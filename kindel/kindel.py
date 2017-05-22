@@ -107,7 +107,7 @@ def parse_bam(bam_path):
     return alignments
 
 
-def clip_start_consensuses(weights, clip_start_weights, clip_start_depth, clip_depth_decay_threshold=0.5):
+def clip_start_consensuses(weights, clip_start_weights, clip_start_depth, decay_threshold):
     # Add min cov requirement??
     positions = list(range(len(weights)))
     masked_positions = positions[:50] + positions[-50:]
@@ -116,13 +116,13 @@ def clip_start_consensuses(weights, clip_start_weights, clip_start_depth, clip_d
     for pos, sc, w in zip(positions, clip_start_depth, weights):
         sum_weights = sum(w.values())
         if sum_weights and sc/sum_weights > 0.5 and pos not in masked_positions and not region_active:
-            region = {'start': pos, 'clip_cns': ''}
+            region = {'start': pos, 'clip_consensus': '', 'direction': '→'}
             start_pos = pos
             region_active = True
             for pos_, (sc_, sw_, w_) in enumerate(zip(clip_start_depth[pos:],
                                                       clip_start_weights[pos:], weights[pos:])):
-                if sc_ > sum(w_.values()) * clip_depth_decay_threshold:
-                    region['clip_cns'] += consensus(sw_)[0]
+                if sc_ > sum(w_.values()) * decay_threshold:
+                    region['clip_consensus'] += consensus(sw_)[0]
                 else:
                     region['end'] =  start_pos + pos_
                     break
@@ -130,7 +130,7 @@ def clip_start_consensuses(weights, clip_start_weights, clip_start_depth, clip_d
     return regions
 
 
-def clip_end_consensuses(weights, clip_end_weights, clip_end_depth, clip_depth_decay_threshold=0.5):
+def clip_end_consensuses(weights, clip_end_weights, clip_end_depth, decay_threshold):
     positions = list(range(len(weights)))
     masked_positions = positions[:50] + positions[-50:]
     reversed_weights = list(sorted(zip(positions, clip_end_depth, clip_end_weights, weights),
@@ -138,21 +138,29 @@ def clip_end_consensuses(weights, clip_end_weights, clip_end_depth, clip_depth_d
     regions = []
     region_active = False
     for i, (pos, ec, ew, w) in enumerate(reversed_weights):
-        if ec/sum(w.values()) > 0.5 and pos not in masked_positions and not region_active:
-            region = {'end': pos+1}  # Start with end since we're iterating in reverse
+        if (sum(w.values()) and ec/sum(w.values()) > 0.5 
+            and pos not in masked_positions and not region_active):
+            region = {'end': pos+1, 'direction': '←'}  # Start with end since we're iterating in reverse
             region_active = True
-            rev_clip_cns = None
+            rev_clip_consensus = None
             for pos_, ec_, ew_, w_ in reversed_weights[len(positions)-pos:]:
-                if ec_ > sum(w_.values()) * clip_depth_decay_threshold:
-                    if not rev_clip_cns:  # Add first base to account for lag in clip coverage
-                        rev_clip_cns = consensus(clip_end_weights[pos_+1])[0]
-                    rev_clip_cns += consensus(ew_)[0]
+                if ec_ > sum(w_.values()) * decay_threshold:
+                    if not rev_clip_consensus:  # Add first base to account for lag in clip coverage
+                        rev_clip_consensus = consensus(clip_end_weights[pos_+1])[0]
+                    rev_clip_consensus += consensus(ew_)[0]
                 else:
                     region['start'] =  pos_
-                    region['clip_cns'] = rev_clip_cns[::-1]
+                    region['clip_consensus'] = rev_clip_consensus[::-1]
                     break
             regions.append(region)
     return regions
+
+
+def clip_consensuses(weights, clip_start_weights, clip_end_weights, clip_start_depth,
+                     clip_end_depth, decay_threshold=0.1):
+    '''Returns clipped consensus sequences and coordinates'''
+    return (clip_start_consensuses(weights, clip_start_weights, clip_start_depth, decay_threshold)
+            + clip_end_consensuses(weights, clip_end_weights, clip_end_depth, decay_threshold))
 
 
 def consensus(weight):
