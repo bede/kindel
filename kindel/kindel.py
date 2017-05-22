@@ -6,6 +6,7 @@ import os
 import sys
 import argh
 import tqdm
+import difflib
 import simplesam
 import subprocess
 import scipy.stats
@@ -107,32 +108,35 @@ def parse_bam(bam_path):
     return alignments
 
 
-def clip_start_consensuses(weights, clip_start_weights, clip_start_depth, decay_threshold):
+def cdr_start_consensuses(weights, clip_start_weights, clip_start_depth, decay_threshold=0.1, mask_ends=50):
     # Add min cov requirement??
+    Region = namedtuple('Region', ['start', 'end', 'seq', 'direction'])
     positions = list(range(len(weights)))
-    masked_positions = positions[:50] + positions[-50:]
+    masked_positions = positions[:mask_ends] + positions[-mask_ends:]
     regions = []
     region_active = False
     for pos, sc, w in zip(positions, clip_start_depth, weights):
         sum_weights = sum(w.values())
-        if sum_weights and sc/sum_weights > 0.5 and pos not in masked_positions and not region_active:
-            region = {'start': pos, 'clip_consensus': '', 'direction': '→'}
+        if sum_weights and sc/sum_weights > 0.5 and pos not in masked_positions and not region_active:            
             start_pos = pos
             region_active = True
+            clip_consensus = ''
             for pos_, (sc_, sw_, w_) in enumerate(zip(clip_start_depth[pos:],
-                                                      clip_start_weights[pos:], weights[pos:])):
+                                                      clip_start_weights[pos:],
+                                                      weights[pos:])):
                 if sc_ > sum(w_.values()) * decay_threshold:
-                    region['clip_consensus'] += consensus(sw_)[0]
+                    clip_consensus += consensus(sw_)[0]
                 else:
-                    region['end'] =  start_pos + pos_
+                    end_pos =  start_pos + pos_
                     break
-            regions.append(region)
+            regions.append(Region(start_pos, end_pos, clip_consensus, '→'))
     return regions
 
 
-def clip_end_consensuses(weights, clip_end_weights, clip_end_depth, decay_threshold):
+def cdr_end_consensuses(weights, clip_end_weights, clip_end_depth, decay_threshold=0.1, mask_ends=50):
+    Region = namedtuple('Region', ['start', 'end', 'seq', 'direction'])
     positions = list(range(len(weights)))
-    masked_positions = positions[:50] + positions[-50:]
+    masked_positions = positions[:mask_ends] + positions[-mask_ends:]
     reversed_weights = list(sorted(zip(positions, clip_end_depth, clip_end_weights, weights),
                                    key=lambda x: x[0], reverse=True))
     regions = []
@@ -140,7 +144,7 @@ def clip_end_consensuses(weights, clip_end_weights, clip_end_depth, decay_thresh
     for i, (pos, ec, ew, w) in enumerate(reversed_weights):
         if (sum(w.values()) and ec/sum(w.values()) > 0.5 
             and pos not in masked_positions and not region_active):
-            region = {'end': pos+1, 'direction': '←'}  # Start with end since we're iterating in reverse
+            end_pos = pos + 1  # Start with end since we're iterating in reverse
             region_active = True
             rev_clip_consensus = None
             for pos_, ec_, ew_, w_ in reversed_weights[len(positions)-pos:]:
@@ -149,18 +153,50 @@ def clip_end_consensuses(weights, clip_end_weights, clip_end_depth, decay_thresh
                         rev_clip_consensus = consensus(clip_end_weights[pos_+1])[0]
                     rev_clip_consensus += consensus(ew_)[0]
                 else:
-                    region['start'] =  pos_
-                    region['clip_consensus'] = rev_clip_consensus[::-1]
+                    
+                    start_pos = pos_
+                    clip_consensus = rev_clip_consensus[::-1]
                     break
-            regions.append(region)
+            regions.append(Region(start_pos, end_pos, clip_consensus, '←'))
     return regions
 
 
-def clip_consensuses(weights, clip_start_weights, clip_end_weights, clip_start_depth,
-                     clip_end_depth, decay_threshold=0.1):
-    '''Returns clipped consensus sequences and coordinates'''
-    return (clip_start_consensuses(weights, clip_start_weights, clip_start_depth, decay_threshold)
-            + clip_end_consensuses(weights, clip_end_weights, clip_end_depth, decay_threshold))
+def cdrp_consensuses(weights, clip_start_weights, clip_end_weights, clip_start_depth,
+                     clip_end_depth, decay_threshold=0.1, mask_ends=10):
+    '''
+    Returns pairs of consensus sequences and coordinates for clip-dominant region (CDRs)
+    '''
+    combined_cdrs = (kindel.cdr_start_consensuses(weights, clip_start_weights, clip_start_depth)
+                    + kindel.cdr_end_consensuses(weights, clip_end_weights, clip_end_depth))
+    paired_cdrs = []
+    fwd_cdrs = [r for r in combined_cdrs if r.direction == '→']
+    rev_cdrs = [r for r in combined_cdrs if r.direction == '←']
+    for fwd_cdr in fwd_cdrs:
+        fwd_cdr_range = range(fwd_cdr.start, fwd_cdr.end)
+        for rev_cdr in rev_cdrs:
+            rev_cdr_range = range(rev_cdr.start, rev_cdr.end)
+            if set(fwd_cdr_range).intersection(rev_cdr_range):
+                paired_cdrs.append((fwd_cdr, rev_cdr))
+                break
+    return paired_cdrs
+
+
+def overlap(s1, s2, min_overlap=7):
+    '''Returns superstring of s1 and s2 about an exact overlap of len > min_overlap'''
+    s = difflib.SequenceMatcher(None, s1, s2)
+    pos_a, pos_b, size = s.find_longest_match(0, len(s1), 0, len(s2))
+    if size < min_overlap:
+        return None
+    overlap = s1[pos_a:pos_a+size]
+    pre = s1[:s1.find(overlap)]
+    post = s2[s2.find(overlap)+len(overlap):]
+    return pre + overlap + post
+
+
+def assemble_cdrs(cdrs):
+    ''''''
+
+
 
 
 def consensus(weight):
@@ -233,67 +269,7 @@ def e_flanking_seq(end_pos, weights, min_depth, k):
     return flank_seq
 
 
-def lcs(s1, s2):
-    '''
-    Returns longest common substring
-    https://en.wikibooks.org/wiki/Algorithm_Implementation/Strings/Longest_common_substring
-    '''
-    m = [[0] * (1 + len(s2)) for i in range(1 + len(s1))]
-    longest, x_longest = 0, 0
-    for x in range(1, 1 + len(s1)):
-        for y in range(1, 1 + len(s2)):
-            if s1[x - 1] == s2[y - 1]:
-                m[x][y] = m[x - 1][y - 1] + 1
-                if m[x][y] > longest:
-                    longest = m[x][y]
-                    x_longest = x
-            else:
-                m[x][y] = 0
-    return s1[x_longest - longest: x_longest]
 
-
-def close_by_lcs(l_seq, r_seq):
-    '''
-    Returns sequence built from merged overlapping left- and right-clipped consensus sequences
-    Potentially very slow; used as last resort
-    '''
-    _lcs = lcs(l_seq, r_seq)
-    l_trim = l_seq[:l_seq.find(_lcs)]
-    r_trim = r_seq[r_seq.find(_lcs)+len(_lcs):]
-    return l_trim + _lcs + r_trim
-
-
-def reconcile_gaps(gaps, weights, clip_start_weights, clip_end_weights, min_depth, closure_k):
-    '''
-    Returns dict of consensus insertions between to gap coordinates from find_gaps()
-    Dict keys are gap start positions (left of gap)
-    '''
-    gap_consensuses = {}
-    for gap in gaps:
-        s_overhang_seq = s_overhang_consensus(clip_start_weights, gap.start, min_depth)
-        e_overhang_seq = e_overhang_consensus(clip_end_weights, gap.end, min_depth)
-        s_flank_seq = s_flanking_seq(gap.start, weights, min_depth, closure_k)
-        e_flank_seq = e_flanking_seq(gap.end, weights, min_depth, closure_k)
-        # print(s_overhang_seq)
-        # print(e_overhang_seq)
-        # print(s_flank_seq)
-        # print(e_flank_seq)
-        if e_flank_seq in s_overhang_seq:  # Close gap using right-clipped read consensus
-            # print('e_flank_seq in s_overhang_seq')
-            i = s_overhang_seq.find(e_flank_seq)  # str.find() returns -1 in absence of match
-            gap_consensus = s_overhang_seq[:i]
-        elif s_flank_seq in e_overhang_seq:  # Close gap using left-clipped read consensus
-            # print('s_flank_seq in e_overhang_seq')
-            i = e_overhang_seq.find(s_flank_seq)
-            gap_consensus = e_overhang_seq[i:]
-        elif len(lcs(s_overhang_seq, e_overhang_seq)) >= closure_k:
-            gap_consensus = close_by_lcs(s_overhang_seq, e_overhang_seq)
-            # print('len(lcs(s_overhang_seq, e_overhang_seq)) >= closure_k')
-        else:
-            print('Unable to close gap', file=sys.stderr)
-            continue
-        gap_consensuses[gap.start] = gap_consensus.lower()
-    return gap_consensuses
 
 
 def consensus_sequence(weights, clip_start_weights, clip_end_weights, insertions, deletions,
@@ -374,16 +350,15 @@ def bam_to_consensus(bam_path, realign=False, trim_ends=False, min_depth=2,
     # print(list(parse_bam(bam_path).keys()))
     for ref_id, aln in parse_bam(bam_path).items():
         if realign:
-            gaps = find_gaps(aln.weights, aln.clip_starts, aln.clip_ends, min_depth)
-            gap_consensuses = reconcile_gaps(gaps, aln.weights, aln.clip_start_weights,
-                                             aln.clip_end_weights, min_depth, closure_k)
+            cdrs = cdr_consensuses(weights, clip_start_weights, clip_end_weights,
+                                   clip_start_depth, clip_end_depth)
         else:
-            gaps, gap_consensuses = None, None
+            cdrs = None
         # print(ref_id, file=sys.stderr)
         consensus, changes = consensus_sequence(aln.weights, aln.clip_start_weights,
-                                                aln.clip_end_weights, aln.insertions, aln.deletions,
-                                                trim_ends, min_depth, uppercase)
-        report = build_report(aln.weights, changes, gaps, gap_consensuses, bam_path, realign,
+                                                aln.clip_end_weights, aln.insertions,
+                                                aln.deletions, trim_ends, min_depth, uppercase)
+        report = build_report(aln.weights, changes, None, None, bam_path, realign,
                               trim_ends, min_depth, closure_k, uppercase)
     refs_consensuses.append(consensus_seqrecord(consensus, ref_id))
     refs_changes[ref_id] = changes
