@@ -20,6 +20,7 @@ from Bio.SeqRecord import SeqRecord
 import numpy as np
 import pandas as pd
 
+Region = namedtuple('Region', ['start', 'end', 'seq', 'direction'])
 
 def parse_records(ref_id, ref_len, records):
     '''
@@ -108,9 +109,8 @@ def parse_bam(bam_path):
     return alignments
 
 
-def cdr_start_consensuses(weights, clip_start_weights, clip_start_depth, decay_threshold=0.1, mask_ends=50):
+def cdr_start_consensuses(weights, clip_start_weights, clip_start_depth, decay_threshold, mask_ends):
     # Add min cov requirement??
-    Region = namedtuple('Region', ['start', 'end', 'seq', 'direction'])
     positions = list(range(len(weights)))
     masked_positions = positions[:mask_ends] + positions[-mask_ends:]
     regions = []
@@ -133,8 +133,7 @@ def cdr_start_consensuses(weights, clip_start_weights, clip_start_depth, decay_t
     return regions
 
 
-def cdr_end_consensuses(weights, clip_end_weights, clip_end_depth, decay_threshold=0.1, mask_ends=50):
-    Region = namedtuple('Region', ['start', 'end', 'seq', 'direction'])
+def cdr_end_consensuses(weights, clip_end_weights, clip_end_depth, decay_threshold, mask_ends):
     positions = list(range(len(weights)))
     masked_positions = positions[:mask_ends] + positions[-mask_ends:]
     reversed_weights = list(sorted(zip(positions, clip_end_depth, clip_end_weights, weights),
@@ -166,8 +165,10 @@ def cdrp_consensuses(weights, clip_start_weights, clip_end_weights, clip_start_d
     '''
     Returns pairs of consensus sequences and coordinates for clip-dominant region (CDRs)
     '''
-    combined_cdrs = (kindel.cdr_start_consensuses(weights, clip_start_weights, clip_start_depth)
-                    + kindel.cdr_end_consensuses(weights, clip_end_weights, clip_end_depth))
+    combined_cdrs = (cdr_start_consensuses(weights, clip_start_weights, clip_start_depth,
+                                           decay_threshold, mask_ends),
+                     + cdr_end_consensuses(weights, clip_end_weights, clip_end_depth,
+                                           decay_threshold, mask_ends))
     paired_cdrs = []
     fwd_cdrs = [r for r in combined_cdrs if r.direction == '→']
     rev_cdrs = [r for r in combined_cdrs if r.direction == '←']
@@ -181,7 +182,7 @@ def cdrp_consensuses(weights, clip_start_weights, clip_end_weights, clip_start_d
     return paired_cdrs
 
 
-def overlap(s1, s2, min_overlap=7):
+def merge_by_lcs(s1, s2, min_overlap=7):
     '''Returns superstring of s1 and s2 about an exact overlap of len > min_overlap'''
     s = difflib.SequenceMatcher(None, s1, s2)
     pos_a, pos_b, size = s.find_longest_match(0, len(s1), 0, len(s2))
@@ -193,10 +194,14 @@ def overlap(s1, s2, min_overlap=7):
     return pre + overlap + post
 
 
-def assemble_cdrs(cdrs):
-    ''''''
-
-
+def merge_cdrps(cdrps):
+    '''Returns merged clip-dominant region pairs as Region instances'''
+    merged_cdrps = []
+    for cdrp in cdrps:
+        fwd_cdr, rev_cdr = cdrp
+        merged_seq = merge_by_lcs(fwd_cdr.seq, rev_cdr.seq)  # Fails as None
+        merged_cdrps.append(Region(fwd_cdr.start, rev_cdr.end, merged_seq, None))
+    return merged_cdrps
 
 
 def consensus(weight):
@@ -269,11 +274,8 @@ def e_flanking_seq(end_pos, weights, min_depth, k):
     return flank_seq
 
 
-
-
-
 def consensus_sequence(weights, clip_start_weights, clip_end_weights, insertions, deletions,
-                       trim_ends, min_depth, uppercase):
+                       patched_regions, trim_ends, min_depth, uppercase):
     consensus_seq = ''
     changes = [None] * len(weights)
     for pos, weight in tqdm.tqdm(enumerate(weights), total=len(weights), desc='building consensus'):
@@ -287,6 +289,11 @@ def consensus_sequence(weights, clip_start_weights, clip_end_weights, insertions
         threshold_freq = aligned_depth * 0.5
         indel_threshold_freq = min(threshold_freq, aligned_depth_next * 0.5)
         # print(pos, del_freq, threshold_freq*2)
+        if patched_regions and any(r.start == pos for r in patched_regions):
+            patched_region = next(r for r in patched_regions if r.start == pos)
+            consensus_seq += patched_region.seq
+            # #######
+
         if del_freq > threshold_freq:
             changes[pos] = 'D'
         elif aligned_depth < min_depth:
@@ -350,14 +357,16 @@ def bam_to_consensus(bam_path, realign=False, trim_ends=False, min_depth=2,
     # print(list(parse_bam(bam_path).keys()))
     for ref_id, aln in parse_bam(bam_path).items():
         if realign:
-            cdrs = cdr_consensuses(weights, clip_start_weights, clip_end_weights,
-                                   clip_start_depth, clip_end_depth)
+            cdrps = cdrp_consensuses(aln.weights, aln.clip_start_weights, aln.clip_end_weights,
+                                     aln.clip_start_depth, aln.clip_end_depth)
+            patched_regions = merge_cdrps(cdrps)
         else:
-            cdrs = None
+            patched_regions = None
         # print(ref_id, file=sys.stderr)
         consensus, changes = consensus_sequence(aln.weights, aln.clip_start_weights,
                                                 aln.clip_end_weights, aln.insertions,
-                                                aln.deletions, trim_ends, min_depth, uppercase)
+                                                aln.deletions, patched_regions, trim_ends,
+                                                min_depth, uppercase)
         report = build_report(aln.weights, changes, None, None, bam_path, realign,
                               trim_ends, min_depth, closure_k, uppercase)
     refs_consensuses.append(consensus_seqrecord(consensus, ref_id))
