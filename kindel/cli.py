@@ -9,18 +9,19 @@ from kindel import kindel
 
 def consensus(bam_path: 'path to SAM/BAM file',
               realign: 'attempt to reconstruct reference around soft-clip boundaries'=False,
-              trim_ends: 'trim ambiguous nucleotides (Ns) from sequence ends'=False,
-              threshold: 'consensus threshold weight'=0.5,
               min_depth: 'substitute Ns at coverage depths beneath this value'=2,
-              closure_k: 'match length required to close soft-clipped gaps'=7,
+              min_overlap: 'match length required to close soft-clipped gaps'=7,
+              clip_decay_threshold: 'match length required to close soft-clipped gaps'=7,
+              trim_ends: 'trim ambiguous nucleotides (Ns) from sequence ends'=False,
               uppercase: 'close gaps using uppercase alphabet'=False):
     '''Infer consensus sequence(s) from alignment in SAM/BAM format'''
     result = kindel.bam_to_consensus(bam_path,
                                      realign,
-                                     trim_ends,
-                                     threshold,
                                      min_depth,
-                                     closure_k)
+                                     min_overlap,
+                                     clip_decay_threshold,
+                                     trim_ends,
+                                     uppercase)
     print(result.report, file=sys.stderr)
     SeqIO.write(result.consensuses, sys.stdout,'fasta')
 

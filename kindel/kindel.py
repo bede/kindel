@@ -10,6 +10,7 @@ import difflib
 import simplesam
 import subprocess
 import scipy.stats
+from pprint import pprint
 
 from collections import OrderedDict, defaultdict, namedtuple
 
@@ -20,7 +21,9 @@ from Bio.SeqRecord import SeqRecord
 import numpy as np
 import pandas as pd
 
+
 Region = namedtuple('Region', ['start', 'end', 'seq', 'direction'])
+
 
 def parse_records(ref_id, ref_len, records):
     '''
@@ -102,28 +105,34 @@ def parse_bam(bam_path):
     # print(bam_path, file=sys.stderr)
     with open(bam_path, 'r') as bam_fh:
         bam = simplesam.Reader(bam_fh)
-        refs_lens = {n.replace('SN:', ''): int(l[0].replace('LN:', '')) for n, l in bam.header['@SQ'].items()}
-        refs_records = {id: (r for r in bam if r.rname == id) for id in refs_lens} # {ref:(records)}
+        refs_lens = {n.replace('SN:', ''): int(l[0].replace('LN:', ''))
+                     for n, l in bam.header['@SQ'].items()}
+        refs_records = {id: (r for r in bam if r.rname == id) for id in refs_lens}
         for ref_id, records in refs_records.items():
             alignments[ref_id] = parse_records(ref_id, refs_lens[ref_id], records)
     return alignments
 
 
-def cdr_start_consensuses(weights, clip_start_weights, clip_start_depth, decay_threshold, mask_ends):
-    # Add min cov requirement??
+def cdr_start_consensuses(weights, clip_start_weights, clip_start_depth,
+                          clip_decay_threshold, mask_ends):
+    '''
+    Returns list of Region instances for right clipped consensuses of clip-dominant region
+    '''
     positions = list(range(len(weights)))
     masked_positions = positions[:mask_ends] + positions[-mask_ends:]
     regions = []
-    region_active = False
     for pos, sc, w in zip(positions, clip_start_depth, weights):
-        if sc/(sum(w.values())+1) > 0.5 and pos not in masked_positions and not region_active:            
+        cdr_positions = [t for u in [list(s)
+                         for s in [range(r.start, r.end)
+                         for r in regions]] 
+                         for t in u]
+        if sc/(sum(w.values())+1) > 0.5 and pos not in masked_positions + cdr_positions:           
             start_pos = pos
-            region_active = True
             clip_consensus = ''
             for pos_, (sc_, sw_, w_) in enumerate(zip(clip_start_depth[pos:],
                                                       clip_start_weights[pos:],
                                                       weights[pos:])):
-                if sc_ > sum(w_.values()) * decay_threshold:
+                if sc_ > sum(w_.values()) * clip_decay_threshold:
                     clip_consensus += consensus(sw_)[0]
                 else:
                     end_pos =  start_pos + pos_
@@ -132,20 +141,25 @@ def cdr_start_consensuses(weights, clip_start_weights, clip_start_depth, decay_t
     return regions
 
 
-def cdr_end_consensuses(weights, clip_end_weights, clip_end_depth, decay_threshold, mask_ends):
+def cdr_end_consensuses(weights, clip_end_weights, clip_end_depth, clip_decay_threshold, mask_ends):
+    '''
+    Returns list of Region instances for left clipped consensuses of clip-dominant region
+    '''
     positions = list(range(len(weights)))
     masked_positions = positions[:mask_ends] + positions[-mask_ends:]
     reversed_weights = list(sorted(zip(positions, clip_end_depth, clip_end_weights, weights),
                                    key=lambda x: x[0], reverse=True))
     regions = []
-    region_active = False
     for i, (pos, ec, ew, w) in enumerate(reversed_weights):
-        if ec/sum(w.values()+1) > 0.5 and pos not in masked_positions and not region_active:
+        cdr_positions = [t for u in [list(s)
+                         for s in [range(r.start, r.end)
+                         for r in regions]] 
+                         for t in u]
+        if ec/(sum(w.values())+1) > 0.5 and pos not in masked_positions + cdr_positions:
             end_pos = pos + 1  # Start with end since we're iterating in reverse
-            region_active = True
             rev_clip_consensus = None
             for pos_, ec_, ew_, w_ in reversed_weights[len(positions)-pos:]:
-                if ec_ > sum(w_.values()) * decay_threshold:
+                if ec_ > sum(w_.values()) * clip_decay_threshold:
                     if not rev_clip_consensus:  # Add first base to account for lag in clip coverage
                         rev_clip_consensus = consensus(clip_end_weights[pos_+1])[0]
                     rev_clip_consensus += consensus(ew_)[0]
@@ -159,14 +173,17 @@ def cdr_end_consensuses(weights, clip_end_weights, clip_end_depth, decay_thresho
 
 
 def cdrp_consensuses(weights, clip_start_weights, clip_end_weights, clip_start_depth,
-                     clip_end_depth, decay_threshold=0.1, mask_ends=10):
+                     clip_end_depth, clip_decay_threshold=0.1, mask_ends=10):
     '''
-    Returns pairs of consensus sequences and coordinates for clip-dominant region (CDRs)
+    Returns list of 2-tuples of L&R clipped consensus sequences around clip-dominant regions
+    Pairs overlapping right (→) and left (←) clipped sequences around CDRs
     '''
     combined_cdrs = (cdr_start_consensuses(weights, clip_start_weights, clip_start_depth,
-                                           decay_threshold, mask_ends)
+                                           clip_decay_threshold, mask_ends)
                      + cdr_end_consensuses(weights, clip_end_weights, clip_end_depth,
-                                           decay_threshold, mask_ends))
+                                           clip_decay_threshold, mask_ends))
+    print('COMBINED_CDRS: {} \n'.format(len(combined_cdrs)))
+    pprint(combined_cdrs)
     paired_cdrs = []
     fwd_cdrs = [r for r in combined_cdrs if r.direction == '→']
     rev_cdrs = [r for r in combined_cdrs if r.direction == '←']
@@ -177,6 +194,8 @@ def cdrp_consensuses(weights, clip_start_weights, clip_end_weights, clip_start_d
             if set(fwd_cdr_range).intersection(rev_cdr_range):
                 paired_cdrs.append((fwd_cdr, rev_cdr))
                 break
+    print('PAIRED_CDRS: {} \n'.format(len(paired_cdrs*2)))
+    pprint(paired_cdrs)
     return paired_cdrs
 
 
@@ -205,7 +224,6 @@ def merge_cdrps(cdrps):
 def consensus(weight):
     '''
     Returns tuple of consensus base, weight and flag indicating a tie for consensus
-    Removed namedtuples for performance
     '''
     base, frequency = max(weight.items(), key=lambda x:x[1]) if sum(weight.values()) else ('N', 0)
     weight_sans_consensus = {k:d for k, d in weight.items() if k != base}
@@ -278,12 +296,12 @@ def consensus_sequence(weights, clip_start_weights, clip_end_weights, insertions
     changes = [None] * len(weights)
     skip_positions = 0
     for pos, weight in tqdm.tqdm(enumerate(weights), total=len(weights), desc='building consensus'):
-        if skip_positions:  # After patch insertion, skip len(patch) positions
+        if skip_positions:
             skip_positions -= 1
             continue
-        if cdr_patches and any(r.start == pos for r in cdr_patches):  # Apply patch if necessary
+        if cdr_patches and any(r.start == pos and r.seq for r in cdr_patches):
             cdr_patch = next(r for r in cdr_patches if r.start == pos)
-            consensus_seq += cdr_patch.seq
+            consensus_seq += cdr_patch.seq.lower()
             skip_positions += len(cdr_patch.seq) - 1
             continue
         ins_freq = sum(insertions[pos].values()) if insertions[pos] else 0
@@ -311,6 +329,7 @@ def consensus_sequence(weights, clip_start_weights, clip_end_weights, insertions
     if trim_ends:
         consensus_seq = consensus_seq.strip('N')
     if uppercase:
+        print('UPPER')
         consensus_seq = consensus_seq.upper()
     return consensus_seq, changes
 
@@ -319,14 +338,13 @@ def consensus_seqrecord(consensus, ref_id):
     return SeqRecord(Seq(consensus), id=ref_id + '_cns', description='')
 
 
-def build_report(weights, changes, gaps, gap_consensuses, bam_path, realign, trim_ends,
-                 min_depth, closure_k, uppercase):
+def build_report(weights, changes, cdr_patches, bam_path, realign, min_depth, min_overlap,
+                 clip_decay_threshold, trim_ends, uppercase):
     aligned_depth = [sum({nt:w[nt] for nt in list('ACGT')}.values()) for w in weights]
     ambiguous_sites = []
     insertion_sites = []
     deletion_sites = []
-    gaps_fmt = ['-'.join([str(g+1) for g in gap]) for gap in gaps] if gaps else []
-    gap_consensuses_fmt = ', '.join(gap_consensuses.values()) if gap_consensuses else ''
+    cdr_patches_fmt = ['{}-{} {}'.format(r.start, r.end, r.seq) for r in cdr_patches]
     for pos, change in enumerate(changes):
         if change == 'N':
             ambiguous_sites.append(str(pos))
@@ -338,22 +356,24 @@ def build_report(weights, changes, gaps, gap_consensuses, bam_path, realign, tri
     report += 'options:\n'
     report += '- bam_path: {}\n'.format(bam_path)
     report += '- realign: {}\n'.format(realign)
+    report += '- min_depth: {}\n'.format(min_depth)
+    report += '- min_overlap: {}\n'.format(min_overlap)
+    report += '- clip_decay_threshold: {}\n'.format(clip_decay_threshold)
     report += '- trim_ends: {}\n'.format(trim_ends)
     report += '- uppercase: {}\n'.format(uppercase)
-    report += '- min_depth: {}\n'.format(min_depth)
-    report += '- closure_k: {}\n'.format(closure_k)
-    report += 'min,max observed depth[50:-50]: {},{}\n'.format(min(aligned_depth[50:-50]), max(aligned_depth))
-    report += 'ambiguous sites: {}\n'.format(', '.join(ambiguous_sites))
-    report += 'insertion sites: {}\n'.format(', '.join(insertion_sites))
-    report += 'deletion sites: {}\n'.format(', '.join(deletion_sites))
-    report += 'soft-clipped gaps: {}\n'.format(', '.join(gaps_fmt))
-    report += 'inserted sequences: {}\n'.format(gap_consensuses_fmt)
+    report += '- min, max observed depth[50:-50]: {}, {}\n'.format(min(aligned_depth[50:-50]),
+                                                               max(aligned_depth))
+    report += 'observations:\n'
+    report += '- ambiguous sites: {}\n'.format(', '.join(ambiguous_sites))
+    report += '- insertion sites: {}\n'.format(', '.join(insertion_sites))
+    report += '- deletion sites: {}\n'.format(', '.join(deletion_sites))
+    report += '- clip-dominant regions: {}\n'.format(', '.join(cdr_patches_fmt))
     report += '============================================================\n'
     return report
 
 
-def bam_to_consensus(bam_path, realign=False, trim_ends=False, min_depth=2,
-                     closure_k=7, uppercase=False, reporting=True):
+def bam_to_consensus(bam_path, realign=False, min_depth=2, min_overlap=7,
+                     clip_decay_threshold=0.1, trim_ends=False, uppercase=False):
     refs_consensuses = []
     refs_changes = {}
     # print(list(parse_bam(bam_path).keys()))
@@ -362,7 +382,7 @@ def bam_to_consensus(bam_path, realign=False, trim_ends=False, min_depth=2,
             cdrps = cdrp_consensuses(aln.weights, aln.clip_start_weights, aln.clip_end_weights,
                                      aln.clip_start_depth, aln.clip_end_depth)
             cdr_patches = merge_cdrps(cdrps)
-            print('REALIGN MODE', cdrps, cdr_patches, file=sys.stderr)
+            # print('REALIGN MODE', cdrps, cdr_patches, file=sys.stderr)
 
         else:
             cdr_patches = None
@@ -371,8 +391,9 @@ def bam_to_consensus(bam_path, realign=False, trim_ends=False, min_depth=2,
                                                 aln.clip_end_weights, aln.insertions,
                                                 aln.deletions, cdr_patches, trim_ends,
                                                 min_depth, uppercase)
-        report = build_report(aln.weights, changes, None, None, bam_path, realign,
-                              trim_ends, min_depth, closure_k, uppercase)
+        report = build_report(aln.weights, changes, cdr_patches, bam_path, realign,
+                              min_depth, min_overlap, clip_decay_threshold, trim_ends,
+                              uppercase)
     refs_consensuses.append(consensus_seqrecord(consensus, ref_id))
     refs_changes[ref_id] = changes
     result = namedtuple('result', ['consensuses', 'refs_changes', 'report'])
