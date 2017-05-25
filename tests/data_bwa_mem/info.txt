@@ -1,0 +1,3 @@
+bwa 0.7.15-r1140
+bwa mem -t 12 <ref.fa> <ref.fq.gz>
+PCR amplified HCV genomes, mostly subtype 1a

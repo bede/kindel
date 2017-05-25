@@ -1,0 +1,3 @@
+segemehl 0.2.0
+segemehl.x -t 6 -A 60 -R 50 --maxout 1 -b -d <ref.fa> -x <ref.idx> -q <reads.fq.gz>
+PCR amplified HCV genomes, mostly subtype 1a
