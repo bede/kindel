@@ -183,7 +183,6 @@ def cdrp_consensuses(weights, clip_start_weights, clip_end_weights, clip_start_d
                      + cdr_end_consensuses(weights, clip_end_weights, clip_end_depth,
                                            clip_decay_threshold, mask_ends))
     print('COMBINED_CDRS: {} \n'.format(len(combined_cdrs)))
-    pprint(combined_cdrs)
     paired_cdrs = []
     fwd_cdrs = [r for r in combined_cdrs if r.direction == '→']
     rev_cdrs = [r for r in combined_cdrs if r.direction == '←']
@@ -195,7 +194,6 @@ def cdrp_consensuses(weights, clip_start_weights, clip_end_weights, clip_start_d
                 paired_cdrs.append((fwd_cdr, rev_cdr))
                 break
     print('PAIRED_CDRS: {} \n'.format(len(paired_cdrs*2)))
-    pprint(paired_cdrs)
     return paired_cdrs
 
 
@@ -295,7 +293,7 @@ def consensus_sequence(weights, clip_start_weights, clip_end_weights, insertions
     consensus_seq = ''
     changes = [None] * len(weights)
     skip_positions = 0
-    for pos, weight in tqdm.tqdm(enumerate(weights), total=len(weights), desc='building consensus'):
+    for pos, weight in tqdm.tqdm(enumerate(weights), total=len(weights), desc='making consensus'):
         if skip_positions:
             skip_positions -= 1
             continue
@@ -426,10 +424,12 @@ def weights(bam_path: 'path to SAM/BAM file',
     for nt in ['A','C','G','T','N']:
         rel_weights_df[[nt]] = weights_df[[nt]].divide(weights_df.depth, axis=0)
     
-    weights_df['shannon'] = [scipy.stats.entropy(x) for x in rel_weights_df[['A','C','G','T']].as_matrix()]
+    weights_df['shannon'] = [scipy.stats.entropy(x)
+                             for x in rel_weights_df[['A','C','G','T']].as_matrix()]
     
     if not no_confidence:
-        weights_df['lower_ci'] = [binomial_ci(c, t)[0] for c, t, in zip(consensus_depths_df, weights_df['depth'])]
+        weights_df['lower_ci'] = [binomial_ci(c, t)[0]
+                                  for c, t, in zip(consensus_depths_df, weights_df['depth'])]
     
     if relative:
         for nt in ['A','C','G','T','N']:
@@ -442,7 +442,6 @@ def features(bam_path: 'path to SAM/BAM file'):
     '''
     Returns DataFrame of relative per-site nucleotide frequencies, insertions, deletions and entropy
     '''
-    
     refs_alns = parse_bam(bam_path)
     weights_fmt = []
     for ref, aln in refs_alns.items():
@@ -460,14 +459,15 @@ def features(bam_path: 'path to SAM/BAM file'):
     for nt in ['A','C','G','T','N','i','d']:
         weights_df[[nt]] = weights_df[[nt]].divide(weights_df.depth, axis=0)
     
-    weights_df['shannon'] = [scipy.stats.entropy(x) for x in weights_df[['A','C','G','T','i','d']].as_matrix()]
+    weights_df['shannon'] = [scipy.stats.entropy(x)
+                             for x in weights_df[['A','C','G','T','i','d']].as_matrix()]
 
     return weights_df.round(3)
 
 
 def variants(bam_path: 'path to SAM/BAM file',
-             abs_threshold: 'absolute frequency (0-∞) threshold above which to call variants'=1,
-             rel_threshold: 'relative frequency (0.0-1.0) threshold above which to call variants'=0.01,
+             abs_threshold: 'absolute frequency (0-∞) above which to call variants'=1,
+             rel_threshold: 'relative frequency (0.0-1.0) above which to call variants'=0.01,
              only_variants: 'exclude invariant sites from output'=False,
              absolute: 'report absolute variant frequencies'=False):
     '''
@@ -491,7 +491,8 @@ def variants(bam_path: 'path to SAM/BAM file',
         if absolute:
             variant_sites.append(alts_above_thresholds)
         else:
-            variant_sites.append({nt:round(w/depth, 3) for nt, w in alts_above_thresholds.items() if depth})
+            variant_sites.append({nt:round(w/depth, 3)
+                                  for nt, w in alts_above_thresholds.items() if depth})
 
     variants_df = pd.DataFrame(variant_sites, columns=['A','C','G','T'])
     variants_df = pd.concat([weights_df.ref,
@@ -586,33 +587,14 @@ def plotly_variants(ids_data):
     py.plot(fig, filename='variants.html')
 
 
-# def samtools_depth(bam_path):
-#     '''Return list of samtools reported depths (all positions, coverage limit 1m)'''
-#     cmd = subprocess.run('samtools depth -a -m 1000000 {}'.format(bam_path),
-#                          shell=True,
-#                          check=True,
-#                          stdout=subprocess.PIPE,
-#                          universal_newlines=True)
-#     depths_fh = io.StringIO(cmd.stdout)
-#     df = pd.read_table(depths_fh, sep='\t', names=['contig', 'pos', 'depth'])
-#     return df.depth.tolist()
-
-
 def plotly_clips(bam_path):
     import plotly.offline as py
     import plotly.graph_objs as go
     aln = list(parse_bam(bam_path).items())[0][1]
-    # depth = samtools_depth(bam_path)
     aligned_depth = [sum(weight.values()) for weight in aln.weights]
-    # print(True if depth == aligned_depth else False)
     ins = [sum(i.values()) for i in aln.insertions]
     x_axis = list(range(len(aligned_depth)))
     traces = [
-        # go.Scattergl(
-        #     x = x_axis,
-        #     y = depth,
-        #     mode = 'lines',
-        #     name = 'Samtools depth'),
         go.Scattergl(
             x = x_axis,
             y = aligned_depth,
@@ -663,7 +645,6 @@ def plotly_clips(bam_path):
     fig = go.Figure(data=traces, layout=layout)
     out_fn = os.path.splitext(os.path.split(bam_path)[1])[0]
     py.plot(fig, filename=out_fn + '.clips.html')
-
 
 
 if __name__ == '__main__':
