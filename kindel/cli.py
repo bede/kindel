@@ -11,7 +11,7 @@ def consensus(bam_path: 'path to SAM/BAM file',
               realign: 'attempt to reconstruct reference around soft-clip boundaries'=False,
               min_depth: 'substitute Ns at coverage depths beneath this value'=2,
               min_overlap: 'match length required to close soft-clipped gaps'=7,
-              clip_decay_threshold: 'match length required to close soft-clipped gaps'=7,
+              clip_decay_threshold: 'read depth fraction at which to cease clip extension'=0.1,
               trim_ends: 'trim ambiguous nucleotides (Ns) from sequence ends'=False,
               uppercase: 'close gaps using uppercase alphabet'=False):
     '''Infer consensus sequence(s) from alignment in SAM/BAM format'''

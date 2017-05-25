@@ -171,7 +171,7 @@ def cdr_end_consensuses(weights, clip_end_weights, clip_end_depth, clip_decay_th
 
 
 def cdrp_consensuses(weights, clip_start_weights, clip_end_weights, clip_start_depth,
-                     clip_end_depth, clip_decay_threshold=0.1, mask_ends=10):
+                     clip_end_depth, clip_decay_threshold, mask_ends):
     '''
     Returns list of 2-tuples of L&R clipped consensus sequences around clip-dominant regions
     Pairs overlapping right (→) and left (←) clipped sequences around CDRs
@@ -373,7 +373,8 @@ def bam_to_consensus(bam_path, realign=False, min_depth=2, min_overlap=7,
     for ref_id, aln in parse_bam(bam_path).items():
         if realign:
             cdrps = cdrp_consensuses(aln.weights, aln.clip_start_weights, aln.clip_end_weights,
-                                     aln.clip_start_depth, aln.clip_end_depth)
+                                     aln.clip_start_depth, aln.clip_end_depth,
+                                     clip_decay_threshold, mask_ends)
             cdr_patches = merge_cdrps(cdrps)
 
         else:
