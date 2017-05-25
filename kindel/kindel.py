@@ -101,8 +101,6 @@ def parse_bam(bam_path):
     Returns alignment information for each reference sequence as an OrderedDict
     '''
     alignments = OrderedDict()
-    # print('\n>>>>>>>>>>')
-    # print(bam_path, file=sys.stderr)
     with open(bam_path, 'r') as bam_fh:
         bam = simplesam.Reader(bam_fh)
         refs_lens = {n.replace('SN:', ''): int(l[0].replace('LN:', ''))
@@ -182,7 +180,7 @@ def cdrp_consensuses(weights, clip_start_weights, clip_end_weights, clip_start_d
                                            clip_decay_threshold, mask_ends)
                      + cdr_end_consensuses(weights, clip_end_weights, clip_end_depth,
                                            clip_decay_threshold, mask_ends))
-    print('COMBINED_CDRS: {} \n'.format(len(combined_cdrs)))
+    # print('COMBINED_CDRS: {}'.format(len(combined_cdrs)))
     paired_cdrs = []
     fwd_cdrs = [r for r in combined_cdrs if r.direction == '→']
     rev_cdrs = [r for r in combined_cdrs if r.direction == '←']
@@ -193,7 +191,7 @@ def cdrp_consensuses(weights, clip_start_weights, clip_end_weights, clip_start_d
             if set(fwd_cdr_range).intersection(rev_cdr_range):
                 paired_cdrs.append((fwd_cdr, rev_cdr))
                 break
-    print('PAIRED_CDRS: {} \n'.format(len(paired_cdrs*2)))
+    # print('PAIRED_CDRS: {}'.format(len(paired_cdrs*2)))
     return paired_cdrs
 
 
@@ -254,7 +252,6 @@ def e_overhang_consensus(clip_end_weights, start_pos, min_depth, max_len=500):
     rev_consensus_overhang = ''
     for pos in range(start_pos, start_pos-max_len, -1):
         pos_consensus = consensus(clip_end_weights[pos])
-        # print(clip_end_weights[pos], pos, pos_consensus[1], min_depth)
         if pos_consensus[1] >= min_depth:
             rev_consensus_overhang += pos_consensus[0]
         else:
@@ -293,7 +290,7 @@ def consensus_sequence(weights, clip_start_weights, clip_end_weights, insertions
     consensus_seq = ''
     changes = [None] * len(weights)
     skip_positions = 0
-    for pos, weight in tqdm.tqdm(enumerate(weights), total=len(weights), desc='making consensus'):
+    for pos, weight in tqdm.tqdm(enumerate(weights), total=len(weights), desc='building consensus'):
         if skip_positions:
             skip_positions -= 1
             continue
@@ -311,7 +308,6 @@ def consensus_sequence(weights, clip_start_weights, clip_end_weights, insertions
             aligned_depth_next = 0
         threshold_freq = aligned_depth * 0.5
         indel_threshold_freq = min(threshold_freq, aligned_depth_next * 0.5)
-        # print(pos, del_freq, threshold_freq*2)
         if del_freq > threshold_freq:
             changes[pos] = 'D'
         elif aligned_depth < min_depth:
@@ -342,7 +338,7 @@ def build_report(weights, changes, cdr_patches, bam_path, realign, min_depth, mi
     ambiguous_sites = []
     insertion_sites = []
     deletion_sites = []
-    cdr_patches_fmt = ['{}-{} {}'.format(r.start, r.end, r.seq) for r in cdr_patches]
+    cdr_patches_fmt = ['{}-{} {}'.format(r.start, r.end, r.seq) for r in cdr_patches] if cdr_patches else ''
     for pos, change in enumerate(changes):
         if change == 'N':
             ambiguous_sites.append(str(pos))
@@ -374,17 +370,14 @@ def bam_to_consensus(bam_path, realign=False, min_depth=2, min_overlap=7,
                      clip_decay_threshold=0.1, trim_ends=False, uppercase=False):
     refs_consensuses = []
     refs_changes = {}
-    # print(list(parse_bam(bam_path).keys()))
     for ref_id, aln in parse_bam(bam_path).items():
         if realign:
             cdrps = cdrp_consensuses(aln.weights, aln.clip_start_weights, aln.clip_end_weights,
                                      aln.clip_start_depth, aln.clip_end_depth)
             cdr_patches = merge_cdrps(cdrps)
-            # print('REALIGN MODE', cdrps, cdr_patches, file=sys.stderr)
 
         else:
             cdr_patches = None
-        # print(ref_id, file=sys.stderr)
         consensus, changes = consensus_sequence(aln.weights, aln.clip_start_weights,
                                                 aln.clip_end_weights, aln.insertions,
                                                 aln.deletions, cdr_patches, trim_ends,

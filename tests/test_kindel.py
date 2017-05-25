@@ -1,26 +1,23 @@
+import os
 import sys
 import functools
 import concurrent.futures
 
-from kindel import kindel
-
 from Bio import SeqIO
 
-def run(function, iterable):
-    with concurrent.futures.ProcessPoolExecutor() as x:
-        return {iterable:r for iterable, r in zip(iterable, x.map(function, iterable))}
+from kindel import kindel
 
 
-sample_ids = ['HCV_AVU_AB_1.12345.R12.sub',
-             'HCV_AVU_AB_3.4.R12.sub',
-             'HCV_AVU_AB_7.1.R12.sub',
-             'HCV_AVU_AB_9.1.R12.sub',
-             'HCV_AVU_AB_11.1.R12.sub']
-# sample_bam_fns = [f'tests/bwa/{id}.bam' for id in sample_ids]
-# sample_master_cns_fns = [f'tests/bwa/master_cns/{id}.bam.cns.fa' for id in sample_ids]
+bwa_path = 'tests/data_bwa_mem/'
+seg_path = 'tests/data_sehemehl/'
+
+bwa_fns = [bwa_path + fn for fn in os.listdir(bwa_path) if fn.endswith('.bam')]
+seg_fns = [seg_path + fn for fn in os.listdir(seg_path) if fn.endswith('.bam')]
+
+test_aln = list(kindel.parse_bam(bwa_fns[0]).values())[0]
 
 
-### UNIT ###
+# UNIT
 
 def test_consensus():
     pos_weight = {'A': 1, 'C': 2, 'G': 3, 'T': 4, 'N': 5}
@@ -32,60 +29,44 @@ def test_consensus():
     assert kindel.consensus(pos_weight_tie)[2]
 
 
-### FUNCTIONAL ###
-# cd /Users/bede/Research/Tools/kindel/kindel/tests/bwa
-# RESET MASTER for file in *.bam; do echo $file; python3 /Users/Bede/Research/Tools/kindel/kindel/kindel.py --fix-gaps --trim-ends $file > master_cns/$file.cns.fa; done
-
-def test_basic_bwa():
-    print('\n>>>>>>>>>> test_basic_bwa()')
-    bam_path = 'tests/bwa/' + sample_ids[0] + '.bam'
-    assert kindel.bam_to_consensus(bam_path)
-
-def test_outputs_fix_gaps_trim_ends_bwa():
-    print('\n>>>>>>>>>> test_outputs_fix_gaps_trim_ends_bwa()')
-    test_records = [kindel.bam_to_consensus(f'tests/bwa/{id}.bam',
-                                            fix_gaps=True,
-                                            trim_ends=True).consensuses for id in sample_ids]
-    for id, r in zip(sample_ids, test_records):
-        SeqIO.write(r, f'tests/bwa/test_cns/{id}.bam.cns.fa', 'fasta')
-    master_records = [SeqIO.read('tests/bwa/master_cns/' + id + '.bam.cns.fa', 'fasta') for id in sample_ids]
-    
-    for t, m in zip(test_records, master_records):
-        if str(t[0].seq) != str(m.seq):
-            print('test len:' + str(len(t[0])), 'master len: ' + str(len(m.seq)))
-            lcs = kindel.lcs(str(t[0]), str(m.seq))
-            print(lcs)
-            print('lcs len: ' + str(len(lcs)))
+def test_merge_by_lcs():
+    one = ('AACTGCCGCTAGGGGCGCGTTCGGGCTCGCCAACATCTTCAGTCCGGG',
+           'GCCGCTAGGGGCGCGTTCGGGCTCGCCAACATCTTCAGTCCGGGCGCTAAGCAGAACA')
+    two = ('AACTGCCGCTAGGGGCGCGTTCGGGCTCGCCAACATCTTCAGTCCGGGCGCTAAGCAGAACATC',
+           'GCAGATACCTACACCACCGGGGGAACTGCCGCTAGGGGCGCGTTCGGGCTCGCCAACATCTTCAGTCCGGGCGCTAAGCAGAACA')
+    short = ('AT', 'CG')
+    assert kindel.merge_by_lcs(*one) == 'AACTGCCGCTAGGGGCGCGTTCGGGCTCGCCAACATCTTCAGTCCGGGCGCTAAGCAGAACA'
+    assert kindel.merge_by_lcs(*two) == 'AACTGCCGCTAGGGGCGCGTTCGGGCTCGCCAACATCTTCAGTCCGGGCGCTAAGCAGAACA'
+    assert kindel.merge_by_lcs(*short) == None
 
 
-def test_weights():
-    weights = kindel.weights('tests/bwa/' + sample_ids[0] + '.bam')
+# FUNCTIONAL
+
+def test_parse_bam():
+    assert test_aln.ref_id == 'ENA|EU155341|EU155341.2'
+    assert len(test_aln.weights) == 9306 
 
 
-# def test_outputs_fix_gaps_trim_ends_bwa_parallel():
-#     partial_bam_to_consensus = functools.partial(kindel.bam_to_consensus,
-#                                                  fix_gaps=True,
-#                                                  trim_ends=True,
-#                                                  reporting=False)
-#     print(sample_bam_fns)
-#     test_records = run(partial_bam_to_consensus, sample_bam_fns)
-#     print('=======')
-#     print(test_records)
-#     print('=======')
-#     master_records = {fn:SeqIO.read(fn, 'fasta') for fn in sample_master_cns_fns}
-#     # print(test_records, master_records)
-#     for (tk, tv), (mk, mv), in zip(test_records.items(), master_records.items()):
-#         print('>>>>>>>>>>>')
-#         print(tk, tv, mk, mv, sep='\n')
-#         print('>>>>>>>>>>>')
-#         if str(t.seq) != str(m.seq):
-#             print('test len:' + str(len(t.seq)), 'master len: ' + str(len(m.seq)))
-#             lcs = kindel.lcs(str(t.seq), str(m.seq))
-#             print(lcs)
-#             print('lcs len: ' + str(len(lcs)))
-            # SeqIO.write(t, sys.stdout, 'fasta')
-            # SeqIO.write(m, sys.stdout, 'fasta')
+def test_cdrp_consensuses():
+    cdrps = kindel.cdrp_consensuses(test_aln.weights, test_aln.clip_start_weights,
+                                    test_aln.clip_end_weights, test_aln.clip_start_depth,
+                                    test_aln.clip_end_depth, clip_decay_threshold=0.1)
+    print(cdrps)
+    assert cdrps[0][0].seq == 'AACTGCCGCTAGGGGCGCGTTCGGGCTCGCCAACATCTTCAGTCCGGGCGCTAAGCAGAACATCCAGCTGATCAACA'
+    assert cdrps[0][1].seq == 'AGCGTCGATGCAGATACCTACACCACCGGGGGAACTGCCGCTAGGGGCGCGTTCGGGCTCGCCAACATCTTCAGTCCGGGCGCTAAGCAGAACA'
 
 
-def test_basic_multiple_contigs_bbmap():
-    pass
+# def test_bam_to_consensus_bwa():
+#     for fn in bwa_fns:
+#         assert kindel.bam_to_consensus(fn)
+
+
+# def test_bam_to_consensus_realign_bwa():
+#     for fn in bwa_fns:
+#         assert kindel.bam_to_consensus(fn, realign=True)
+
+
+# CLI
+
+
+# SAMPLE-SPECIFIC FUNCTIONAL REGRESSION
