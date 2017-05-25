@@ -1,11 +1,14 @@
-# Kindel – indel-aware offline consensus calling for nucleotide alignments
+# Kindel – indel-aware consensus calling
 [![PyPI version](https://badge.fury.io/py/kindel.svg)](https://badge.fury.io/py/kindel)  
 [![Build Status](https://travis-ci.org/bede/kindel.svg?branch=master)](https://travis-ci.org/bede/kindel)  
 
+A consensus caller which accepts a headed SAM/BAM input and generates a majority rule consensus in fasta format,  reconciling small indels described in CIGAR fields so as to maximise read-reference concordance. Kindel also permits recovery of consensus sequence across highly divergent regions (such as  those encoding viral envelope proteins) where regions of reads cannot be aligned. With **`--realign`**, Kindel identifies regions of the reference that are clip-dominant (>depth\*0.5) and attempts to assemble a patched consensus using the unaligned sequence context.
 
-A straightforward consensus caller which accepts a headed SAM/BAM input and generates a majority rule consensus in fasta format,  reconciling small indels described in CIGAR fields so as to maximise read-reference concordance. Furthermore, Kindel permits recovery of consensus sequence across highly divergent regions (such as  those encoding viral envelope proteins) where regions of reads cannot be aligned. With `--realign`, Kindel identifies regions of the reference where soft clipped coverage depth exceeds coverage\*0.5 and attempts to assemble a patched consensus using unaligned sequence context.
+![clip-dominant region](cdr.png)
 
-Existing consensus calling approaches are complicated and often involve a variant calling step. While an [elegant streaming approach](https://github.com/karel-brinda/ococo) was recently released, it cannot reconcile indels.
+Existing consensus calling approaches are complicated and often involve a variant calling step. An [elegant streaming approach](https://github.com/karel-brinda/ococo) was recently released but cannot reconcile indels.
+
+
 
 
 ## Installation
@@ -118,7 +121,7 @@ kindel.bam_to_consensus(bam_path, realign=False, min_depth=2, min_overlap=7,
 ## Issues
 Please let me know if you run into problems by opening a GitHub issue, [tweeting](https://twitter.com/beconstant) or mailing me via `b at bede dawt im`.
 - Conceived for use with highly diverse Hepatitis C populations – untested with anything larger
-- SAM/BAM files must contain an SQ header line containing the reference sequence length.
+- SAM/BAM files must contain an SQ header line containing the reference sequence length
 - Able to close gaps of up to 2x read length given adequate depth of coverage
 - Sometimes requires multiple runs to converge on an optimal consensus
 - Slow (10-20k records/s)
