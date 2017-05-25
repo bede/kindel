@@ -50,7 +50,7 @@ def test_parse_bam():
 def test_cdrp_consensuses():
     cdrps = kindel.cdrp_consensuses(test_aln.weights, test_aln.clip_start_weights,
                                     test_aln.clip_end_weights, test_aln.clip_start_depth,
-                                    test_aln.clip_end_depth, clip_decay_threshold=0.1)
+                                    test_aln.clip_end_depth, 0.1, 10)
     print(cdrps)
     assert cdrps[0][0].seq == 'AACTGCCGCTAGGGGCGCGTTCGGGCTCGCCAACATCTTCAGTCCGGGCGCTAAGCAGAACATCCAGCTGATCAACA'
     assert cdrps[0][1].seq == 'AGCGTCGATGCAGATACCTACACCACCGGGGGAACTGCCGCTAGGGGCGCGTTCGGGCTCGCCAACATCTTCAGTCCGGGCGCTAAGCAGAACA'

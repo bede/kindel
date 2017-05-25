@@ -367,7 +367,7 @@ def build_report(weights, changes, cdr_patches, bam_path, realign, min_depth, mi
 
 
 def bam_to_consensus(bam_path, realign=False, min_depth=2, min_overlap=7,
-                     clip_decay_threshold=0.1, trim_ends=False, uppercase=False):
+                     clip_decay_threshold=0.1, mask_ends=10, trim_ends=False, uppercase=False):
     refs_consensuses = []
     refs_changes = {}
     for ref_id, aln in parse_bam(bam_path).items():
