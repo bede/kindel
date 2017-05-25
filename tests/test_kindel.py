@@ -56,14 +56,14 @@ def test_cdrp_consensuses():
     assert cdrps[0][1].seq == 'AGCGTCGATGCAGATACCTACACCACCGGGGGAACTGCCGCTAGGGGCGCGTTCGGGCTCGCCAACATCTTCAGTCCGGGCGCTAAGCAGAACA'
 
 
-# def test_bam_to_consensus_bwa():
-#     for fn in bwa_fns:
-#         assert kindel.bam_to_consensus(fn)
+def test_bam_to_consensus_bwa():
+    for fn in bwa_fns:
+        assert kindel.bam_to_consensus(fn)
 
 
-# def test_bam_to_consensus_realign_bwa():
-#     for fn in bwa_fns:
-#         assert kindel.bam_to_consensus(fn, realign=True)
+def test_bam_to_consensus_realign_bwa():
+    for fn in bwa_fns:
+        assert kindel.bam_to_consensus(fn, realign=True)
 
 
 # CLI
