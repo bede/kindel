@@ -14,7 +14,7 @@ seg_path = 'tests/data_sehemehl/'
 bwa_fns = [bwa_path + fn for fn in os.listdir(bwa_path) if fn.endswith('.bam')]
 seg_fns = [seg_path + fn for fn in os.listdir(seg_path) if fn.endswith('.bam')]
 
-test_aln = list(kindel.parse_bam(bwa_fns[0]).values())[0]
+test_aln = list(kindel.parse_bam(bwa_path + '1.1.sub_test.bam').values())[0]
 
 
 # UNIT
