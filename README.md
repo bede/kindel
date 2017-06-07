@@ -1,4 +1,4 @@
-# Kindel – indel-aware consensus calling
+# Kindel: indel-aware consensus calling
 [![PyPI version](https://badge.fury.io/py/kindel.svg)](https://badge.fury.io/py/kindel)  
 [![Build Status](https://travis-ci.org/bede/kindel.svg?branch=master)](https://travis-ci.org/bede/kindel)  
 [![JOSS status](http://joss.theoj.org/papers/117efd1fc35bb2011311f73d3fa0b545/status.svg)](http://joss.theoj.org/papers/117efd1fc35bb2011311f73d3fa0b545)  
@@ -10,12 +10,20 @@ A consensus caller which accepts a headed SAM/BAM input and generates a majority
 Existing consensus calling approaches are complicated and often involve a variant calling step. An [elegant streaming approach](https://github.com/karel-brinda/ococo) was recently released but cannot reconcile indels.
 
 
+## Features
+- [x] Reconciliation of CIGAR described insertions and deletions
+- [x] Gap closure (`--realign`) using overlapping soft-clipped alignment context
+- [x] Support SAMs from multiple aligners – (currently tested BWA MEM, Segemehl)
+- [x] Frequency based variant calling with `kindel variants` (no VCF output currently)
+- [x] Plotting of clip frequencies
+- [ ] Support for mutiple reference sequences (untested)
+- [ ] Fast C++ version (early stages)
 
 
 ## Installation
 ```python
 # Requires Python 3.5+
-pip install kindel
+pip3 install kindel
 ```
 Dependencies should automatically installed, except for Samtools which is needed for BAM input.
 
@@ -110,7 +118,6 @@ optional arguments:
   -o, --only-variants   exclude invariant sites from output (default: False)
 ```
 
-
 ### Python API
 ```python
 from kindel import kindel
@@ -119,6 +126,7 @@ kindel.bam_to_consensus(bam_path, realign=False, min_depth=2, min_overlap=7,
                         clip_decay_threshold=0.1, trim_ends=False, uppercase=False)
 ```
 
+
 ## Issues
 Please let me know if you run into problems by opening a GitHub issue, [tweeting](https://twitter.com/beconstant) or mailing me via `b at bede dawt im`.
 - Conceived for use with highly diverse Hepatitis C populations – untested with anything larger
@@ -126,11 +134,3 @@ Please let me know if you run into problems by opening a GitHub issue, [tweeting
 - Able to close gaps of up to 2x read length given adequate depth of coverage
 - Sometimes requires multiple runs to converge on an optimal consensus
 - Slow (10-20k records/s)
-
-## Features
-- [x] Reconciliation of CIGAR described insertions and deletions
-- [x] Gap closure (`--realign`) using soft-clipped alignment context
-- [ ] Support mutiple reference sequences (needs testing)
-- [x] Support SAMs from multiple aligners – tested BWA MEM, Segemehl
-- [x] Frequency based variant calling with `kindel variants` (no VCF output)
-- [x] Plotting of clip frequencies
