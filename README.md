@@ -1,7 +1,8 @@
 # Kindel: indel-aware consensus calling
+
+[![JOSS status](http://joss.theoj.org/papers/117efd1fc35bb2011311f73d3fa0b545/status.svg)](http://joss.theoj.org/papers/117efd1fc35bb2011311f73d3fa0b545)  
 [![PyPI version](https://badge.fury.io/py/kindel.svg)](https://badge.fury.io/py/kindel)  
 [![Build Status](https://travis-ci.org/bede/kindel.svg?branch=master)](https://travis-ci.org/bede/kindel)  
-[![JOSS status](http://joss.theoj.org/papers/117efd1fc35bb2011311f73d3fa0b545/status.svg)](http://joss.theoj.org/papers/117efd1fc35bb2011311f73d3fa0b545)  
 
 A consensus caller which accepts a headed SAM/BAM input and generates a majority consensus,  reconciling small indels described in CIGAR fields so as to maximise read-reference concordance. Kindel also permits recovery of consensus sequence across highly divergent regions (such as  those encoding viral envelope proteins) where regions of reads cannot be aligned. With **`--realign`**, Kindel identifies regions of the reference that are clip-dominant (>depth\*0.5) and attempts to assemble a patched consensus using the unaligned sequence context. Existing consensus calling approaches are complicated and often involve a variant calling step. An [elegant streaming approach](https://github.com/karel-brinda/ococo) was recently released but cannot reconcile indels.
 
