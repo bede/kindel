@@ -403,33 +403,36 @@ def weights(bam_path: 'path to SAM/BAM file',
         '''Returns lower, upper bounds of the Jeffrey binomial proportion confidence interval'''
         lower_ci, upper_ci = scipy.stats.beta.interval(1-alpha, count+0.5, nobs-count+0.5)
         return lower_ci, upper_ci
-    
+
     refs_alns = parse_bam(bam_path)
     weights_fmt = []
     for ref, aln in refs_alns.items():
         weights_fmt.extend([dict(w, ref=ref, pos=i) for i, w in enumerate(aln.weights, start=1)])
-    
+
     weights_df = pd.DataFrame(weights_fmt, columns=['ref','pos','A','C','G','T','N'])
     weights_df['depth'] = weights_df[['A','C','G','T','N']].sum(axis=1)
     consensus_depths_df = weights_df[['A','C','G','T','N']].max(axis=1)
     weights_df['consensus'] = consensus_depths_df.divide(weights_df.depth)
-    
+
     rel_weights_df = pd.DataFrame()
     for nt in ['A','C','G','T','N']:
         rel_weights_df[[nt]] = weights_df[[nt]].divide(weights_df.depth, axis=0)
-    
+        rel_weights_df = rel_weights_df.round(dict(A=3, C=3, G=3, T=3, N=3))
+
     weights_df['shannon'] = [scipy.stats.entropy(x)
-                             for x in rel_weights_df[['A','C','G','T']].as_matrix()]
-    
+                             for x in rel_weights_df[['A','C','G','T']].values]
+
     if not no_confidence:
-        weights_df['lower_ci'] = [binomial_ci(c, t)[0]
-                                  for c, t, in zip(consensus_depths_df, weights_df['depth'])]
-    
+        conf_ints = [binomial_ci(c, t) for c, t, in zip(consensus_depths_df,
+                                                        weights_df['depth'])]
+        weights_df['lower_ci'] = [ci[0] for ci in conf_ints]
+        weights_df['upper_ci'] = [ci[1] for ci in conf_ints]
+
     if relative:
         for nt in ['A','C','G','T','N']:
             weights_df[[nt]] = rel_weights_df[[nt]]
-    
-    return weights_df.round(dict(consensus=3, lower_ci=3, shannon=3))
+
+    return weights_df.round(dict(consensus=3, lower_ci=3, upper_ci=3, shannon=3))
 
 
 def features(bam_path: 'path to SAM/BAM file'):

@@ -65,8 +65,13 @@ def test_bam_to_consensus_realign_bwa():
     for fn in bwa_fns:
         assert kindel.bam_to_consensus(fn, realign=True)
 
+def test_weights():
+    kindel.weights(bwa_fns[0], relative=True) 
+
 
 # CLI
+
+
 
 
 # SAMPLE-SPECIFIC FUNCTIONAL REGRESSION
