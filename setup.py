@@ -19,6 +19,7 @@ CLASSIFIERS = ['Environment :: Console',
                'Natural Language :: English',
                'Operating System :: POSIX :: Linux',
                'Operating System :: MacOS :: MacOS X',
+               'Programming Language :: Python :: 3.5',
                'Programming Language :: Python :: 3.6',
                'Topic :: Scientific/Engineering :: Bio-Informatics']
 
