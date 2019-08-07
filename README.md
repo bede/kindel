@@ -29,10 +29,14 @@ A consensus caller which accepts a headed SAM/BAM input and generates a majority
 - [x] Reconciliation of CIGAR described insertions and deletions
 - [x] Gap closure (`--realign`) using overlapping soft-clipped alignment context
 - [x] Support SAMs from multiple aligners – (currently tested BWA MEM, Segemehl)
+  - [ ] Accept unmapped fastq input
+  - [ ] Minimap2 support
 - [x] Frequency based variant calling with `kindel variants` (no VCF output currently)
 - [x] Plotting of clip frequencies
+- [ ] 
+- [ ] Customisable threshold weight
 - [ ] Support for mutiple reference sequences (untested)
-- [ ] Fast C++ version (early stages)
+- [ ] C++ version (early stages)
 
 
 
@@ -52,11 +56,11 @@ Dependencies should automatically installed, except for Samtools which is needed
 Also see [`usage.ipynb`](usage.ipynb)
 
 ### Command line
-```
-$ kindel consensus --realign alignment.bam
+```bash
+$ kindel consensus alignment.bam > cns.fa
 ```
 The consensus fasta is sent to `stdout` and a report to `stderr`
-```
+```bash
 $ kindel -h
 usage: kindel [-h] {consensus,weights,variants} ...
 
@@ -73,7 +77,7 @@ optional arguments:
   -h, --help            show this help message and exit
 ```
 ---
-```
+```bash
 $  kindel consensus -h
 usage: kindel consensus [-h] [-r] [--min-depth MIN_DEPTH]
                         [--min-overlap MIN_OVERLAP] [-c CLIP_DECAY_THRESHOLD]
@@ -103,7 +107,7 @@ optional arguments:
   -u, --uppercase       close gaps using uppercase alphabet (default: False)
 ```
 ---
-```
+```bash
 $ kindel weights -h
 usage: kindel weights [-h] [-r] [-n] bam-path
 
@@ -119,7 +123,7 @@ optional arguments:
 
 ```
 ---
-```
+```bash
 $ kindel variants -h
 usage: kindel variants [-h] [-a ABS_THRESHOLD] [-r REL_THRESHOLD] [-o]
                        bam-path

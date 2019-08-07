@@ -43,38 +43,42 @@ def parse_records(ref_id, ref_len, records):
     for record in tqdm.tqdm(records, desc='loading sequences'): # Progress bar
         q_pos = 0 
         r_pos = record.pos-1  # Zero indexed genome coordinates
-        for i, cigarette in enumerate(record.cigars):
-            length, operation = cigarette
-            if operation == 'M':
-                for _ in range(length):
-                    q_nt = record.seq[q_pos].upper()
-                    weights[r_pos][q_nt] += 1
-                    r_pos += 1
-                    q_pos += 1
-            elif operation == 'I':
-                nts = record.seq[q_pos:q_pos+length].upper()
-                insertions[r_pos][nts] += 1
-                q_pos += length
-            elif operation == 'D':
-                deletions[r_pos] += 1
-                r_pos += length
-            elif operation == 'S':
-                if i == 0:  # Count right-of-gap / l-clipped start positions (e.g. start of ref)
-                    clip_ends[r_pos] += 1
-                    for gap_i in range(length):
-                        q_nt = record.seq[gap_i].upper()
-                        rel_r_pos = r_pos - length + gap_i
-                        if rel_r_pos >= 0:
-                            clip_end_weights[rel_r_pos][q_nt] += 1
-                    q_pos += length
-                else:  # Count left-of-gap / r-clipped start position (e.g. end of ref)
-                    clip_starts[r_pos] += 1 
-                    for pos in range(length):
+        try:
+            for i, cigarette in enumerate(record.cigars):  # StopIteration -> RuntimeError
+                length, operation = cigarette
+                if operation == 'M' or operation == '=':
+                    for _ in range(length):
                         q_nt = record.seq[q_pos].upper()
-                        if r_pos < ref_len:
-                            clip_start_weights[r_pos][q_nt] += 1
-                            r_pos += 1
-                            q_pos += 1
+                        weights[r_pos][q_nt] += 1
+                        r_pos += 1
+                        q_pos += 1
+                elif operation == 'I':
+                    nts = record.seq[q_pos:q_pos+length].upper()
+                    insertions[r_pos][nts] += 1
+                    q_pos += length
+                elif operation == 'D':
+                    deletions[r_pos] += 1
+                    r_pos += length
+                elif operation == 'S':
+                    if i == 0:  # Count right-of-gap / l-clipped start positions (e.g. start of ref)
+                        clip_ends[r_pos] += 1
+                        for gap_i in range(length):
+                            q_nt = record.seq[gap_i].upper()
+                            rel_r_pos = r_pos - length + gap_i
+                            if rel_r_pos >= 0:
+                                clip_end_weights[rel_r_pos][q_nt] += 1
+                        q_pos += length
+                    else:  # Count left-of-gap / r-clipped start position (e.g. end of ref)
+                        clip_starts[r_pos] += 1 
+                        for pos in range(length):
+                            q_nt = record.seq[q_pos].upper()
+                            if r_pos < ref_len:
+                                clip_start_weights[r_pos][q_nt] += 1
+                                r_pos += 1
+                                q_pos += 1
+        except RuntimeError:
+            pass  # Handle case where cigar is '*' and SimpleSam throws StopIteration
+
     aligned_depth = [sum(w.values()) for w in weights]
     weights_consensus_seq = ''.join([consensus(w)[0] for w in weights])
     discordant_depth = [sum({nt:w[nt]
@@ -89,6 +93,7 @@ def parse_records(ref_id, ref_len, records):
                                          'clip_start_weights', 'clip_end_weights',
                                          'clip_start_depth', 'clip_end_depth',
                                          'clip_depth', 'consensus_depth'])
+
     return alignment(ref_id, weights, insertions, deletions,
                      clip_starts, clip_ends,
                      clip_start_weights, clip_end_weights,
@@ -103,11 +108,24 @@ def parse_bam(bam_path):
     alignments = OrderedDict()
     with open(bam_path, 'r') as bam_fh:
         bam = simplesam.Reader(bam_fh)
-        refs_lens = {n.replace('SN:', ''): int(l[0].replace('LN:', ''))
-                     for n, l in bam.header['@SQ'].items()}
-        refs_records = {id: (r for r in bam if r.rname == id) for id in refs_lens}
-        for ref_id, records in refs_records.items():
-            alignments[ref_id] = parse_records(ref_id, refs_lens[ref_id], records)
+    refs_lens = {n.replace('SN:', ''): int(l[0].replace('LN:', ''))
+                 for n, l in bam.header['@SQ'].items()}
+    
+    refs_records = defaultdict(list)
+    for r in bam:
+        for id in refs_lens:
+            refs_records[r.rname].append(r)
+    
+    if '*' in refs_records:
+        del refs_records['*']
+
+    assert len(refs_records) <= 1, 'Detected primary mappings to more than one reference'
+    # Use samtools view to extract single contig primary mappings
+    # Otherwise would make a useful enhancement 
+
+    for ref_id, records in refs_records.items():
+        alignments[ref_id] = parse_records(ref_id, refs_lens[ref_id], records)
+
     return alignments
 
 
@@ -136,6 +154,7 @@ def cdr_start_consensuses(weights, clip_start_weights, clip_start_depth,
                     end_pos =  start_pos + pos_
                     break
             regions.append(Region(start_pos, end_pos, clip_consensus, '→'))
+
     return regions
 
 
@@ -167,6 +186,7 @@ def cdr_end_consensuses(weights, clip_end_weights, clip_end_depth, clip_decay_th
                     clip_consensus = rev_clip_consensus[::-1]
                     break
             regions.append(Region(start_pos, end_pos, clip_consensus, '←'))
+
     return regions
 
 
@@ -191,7 +211,7 @@ def cdrp_consensuses(weights, clip_start_weights, clip_end_weights, clip_start_d
             if set(fwd_cdr_range).intersection(rev_cdr_range):
                 paired_cdrs.append((fwd_cdr, rev_cdr))
                 break
-    # print('PAIRED_CDRS: {}'.format(len(paired_cdrs*2)))
+
     return paired_cdrs
 
 
@@ -204,6 +224,7 @@ def merge_by_lcs(s1, s2, min_overlap=7):
     overlap = s1[pos_a:pos_a+size]
     pre = s1[:s1.find(overlap)]
     post = s2[s2.find(overlap)+len(overlap):]
+
     return pre + overlap + post
 
 
@@ -214,6 +235,7 @@ def merge_cdrps(cdrps):
         fwd_cdr, rev_cdr = cdrp
         merged_seq = merge_by_lcs(fwd_cdr.seq, rev_cdr.seq)  # Fails as None
         merged_cdrps.append(Region(fwd_cdr.start, rev_cdr.end, merged_seq, None))
+
     return merged_cdrps
 
 
@@ -226,6 +248,7 @@ def consensus(weight):
     tie = True if frequency and frequency in weight_sans_consensus.values() else False
     aligned_depth = sum(weight.values())
     proportion = round(frequency/aligned_depth, 2) if aligned_depth else 0
+
     return(base, frequency, proportion, tie)
 
 
@@ -241,6 +264,7 @@ def s_overhang_consensus(clip_start_weights, start_pos, min_depth, max_len=500):
             consensus_overhang += pos_consensus[0]
         else:
             break
+
     return consensus_overhang
 
 
@@ -257,6 +281,7 @@ def e_overhang_consensus(clip_end_weights, start_pos, min_depth, max_len=500):
         else:
             break
     consensus_overhang = rev_consensus_overhang[::-1]
+
     return consensus_overhang
 
 
@@ -323,8 +348,8 @@ def consensus_sequence(weights, clip_start_weights, clip_end_weights, insertions
     if trim_ends:
         consensus_seq = consensus_seq.strip('N')
     if uppercase:
-        print('UPPER')
         consensus_seq = consensus_seq.upper()
+
     return consensus_seq, changes
 
 
@@ -338,7 +363,7 @@ def build_report(weights, changes, cdr_patches, bam_path, realign, min_depth, mi
     ambiguous_sites = []
     insertion_sites = []
     deletion_sites = []
-    cdr_patches_fmt = ['{}-{} {}'.format(r.start, r.end, r.seq) for r in cdr_patches] if cdr_patches else ''
+    cdr_patches_fmt = ['{}-{}: {}'.format(r.start, r.end, r.seq) for r in cdr_patches] if cdr_patches else ''
     for pos, change in enumerate(changes):
         if change == 'N':
             ambiguous_sites.append(str(pos))
@@ -363,6 +388,7 @@ def build_report(weights, changes, cdr_patches, bam_path, realign, min_depth, mi
     report += '- deletion sites: {}\n'.format(', '.join(deletion_sites))
     report += '- clip-dominant regions: {}\n'.format(', '.join(cdr_patches_fmt))
     report += '============================================================\n'
+
     return report
 
 
@@ -379,6 +405,7 @@ def bam_to_consensus(bam_path, realign=False, min_depth=2, min_overlap=7,
 
         else:
             cdr_patches = None
+        # print(aln.weights, aln.clip_start_weights, aln.clip_end_weights, aln.insertions,  aln.deletions, cdr_patches, trim_ends, min_depth, uppercase)
         consensus, changes = consensus_sequence(aln.weights, aln.clip_start_weights,
                                                 aln.clip_end_weights, aln.insertions,
                                                 aln.deletions, cdr_patches, trim_ends,
@@ -386,9 +413,10 @@ def bam_to_consensus(bam_path, realign=False, min_depth=2, min_overlap=7,
         report = build_report(aln.weights, changes, cdr_patches, bam_path, realign,
                               min_depth, min_overlap, clip_decay_threshold, trim_ends,
                               uppercase)
-    refs_consensuses.append(consensus_seqrecord(consensus, ref_id))
+        refs_consensuses.append(consensus_seqrecord(consensus, ref_id))
     refs_changes[ref_id] = changes
     result = namedtuple('result', ['consensuses', 'refs_changes', 'report'])
+
     return result(refs_consensuses, refs_changes, report)
 
 
@@ -512,6 +540,7 @@ def parse_samtools_depth(*args):
         id = arg
         depths_df = pd.read_table(arg, names=['contig', 'position', 'depth'])
         ids_depths[id] = depths_df.depth.tolist()
+
     return ids_depths
 
 

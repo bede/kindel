@@ -25,6 +25,7 @@ def consensus(bam_path: 'path to SAM/BAM file',
                                      trim_ends,
                                      uppercase)
     print(result.report, file=sys.stderr)
+    # print(result.consensuses[1].seq, file=sys.stdout)
     SeqIO.write(result.consensuses, sys.stdout,'fasta')
 
 
