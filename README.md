@@ -4,7 +4,7 @@
 [![PyPI version](https://badge.fury.io/py/kindel.svg)](https://badge.fury.io/py/kindel)  
 [![Build Status](https://travis-ci.org/bede/kindel.svg?branch=master)](https://travis-ci.org/bede/kindel)  
 
-A consensus caller that generates majority consensus sequence(s) from a BAM file, reconciling small  CIGAR-described indels so as to maximise read-to-reference concordance. Kindel also permits recovery of consensus sequence across highly divergent regions (such as  those encoding viral envelope proteins) where regions of reads cannot be aligned. With **`--realign`**, Kindel identifies regions of the reference that are clip-dominant (>depth\*0.5) and attempts to assemble a patched consensus using the unaligned sequence context. Existing consensus calling approaches are complicated and often involve a variant calling step. An [elegant streaming approach](https://github.com/karel-brinda/ococo) was recently released but cannot reconcile indels. Update: [Pilon](https://github.com/broadinstitute/pilon) also now exists in this space. 
+A consensus caller that generates majority consensus sequence(s) from just a BAM file, reconciling small  CIGAR-described indels to maximise read-to-reference concordance. Kindel also permits recovery of consensus sequence across highly divergent regions (such as  those encoding viral envelope proteins) where regions of reads cannot be aligned. With **`--realign`**, Kindel identifies regions of the reference that are clip-dominant (>depth\*0.5) and attempts to assemble a patched consensus using the unaligned sequence context. Existing consensus calling approaches are complicated and often involve a variant calling step. Developed for use with small virus genomes. An [elegant streaming approach](https://github.com/karel-brinda/ococo) was recently released but cannot reconcile indels. Update: [Pilon](https://github.com/broadinstitute/pilon) also now solves similar problems.
 
 
 
@@ -26,26 +26,34 @@ A consensus caller that generates majority consensus sequence(s) from a BAM file
 
 
 ## Features
-- [x] Reconciliation of aligned substititutions, insertions and deletions
+- [x] Consensus of aligned substititutions, insertions and deletions
+
 - [x] Gap closure (`--realign`) using overlapping soft-clipped alignment context
-- [x] Tested against BAM output from BWA, Minimap2 and Segemehl 
-- [ ] Support for BAMs with multiple reference contigs, chromosomes
-- [x] Frequency based variant calling with `kindel variants` (no VCF output currently)
-- [x] Plotting
 
+- [x] Tested with Illumina alignments from BWA, Minimap2 and Segemehl 
 
+- [x] Support for BAMs with multiple reference contigs, chromosomes
+
+- [x] Naive frequency-based variant calling with `kindel variants` (no VCF output)
+
+  
 
 ### Todo
-
-- [ ] Fix broken SAM parsing (BAM works fine)
-
 - [ ] Customisable threshold weight
-
 - [ ] Numpy rewrite to handle bacterial long read sequences
-
+- [ ] Optionally gap fill using a supplied reference
 - [ ] Parallelism
-  
-  
+
+
+
+## Limitations
+
+- [ ] Slow (10-20k records/s), & will probably explode with bacterial genomes
+- [ ] SAM/BAM files must contain an SQ header line with reference sequence(s) length
+- [ ] Able to close gaps of up to 2x read length given adequate depth of coverage
+- [ ] May require multiple runs to converge on a consensus
+
+
 
 ## Installation
 
@@ -162,17 +170,7 @@ kindel.bam_to_consensus(bam_path, realign=False, min_depth=2, min_overlap=7,
 
 ## Issues
 
-Please let me know if you run into problems by opening a GitHub issue, [tweeting](https://twitter.com/beconstant) or mailing me via `b at bede dawt im`.
-- Conceived for use with highly diverse Hepatitis C populations – untested with anything larger
-
-- SAM/BAM files must contain an SQ header line containing the reference sequence length
-
-- Able to close gaps of up to 2x read length given adequate depth of coverage
-
-- Sometimes requires multiple runs to converge on an optimal consensus
-
-- Slow (10-20k records/s)
-
+Please let me know if you run into problems by opening a GitHub issue, tweeting [@beconstant](https://twitter.com/beconstant) or mailing me via `b at bede dawt im`.
 
 
 
@@ -182,6 +180,6 @@ If you would like to contribute to this project, please open an issue or contact
 
 Before issuing a pull request, please:
 
-- Ensure existing tests pass by executing `pytest` inside the package directory  (requires `pytest` package)
+- Ensure tests pass by executing `pytest` inside the package directory  (requires `pytest` package)
 - Increment the version number inside `__init__.py` according to [SemVer](http://semver.org/)
 - Update documentation and/or tests if possible
