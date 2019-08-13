@@ -4,7 +4,7 @@
 [![PyPI version](https://badge.fury.io/py/kindel.svg)](https://badge.fury.io/py/kindel)  
 [![Build Status](https://travis-ci.org/bede/kindel.svg?branch=master)](https://travis-ci.org/bede/kindel)  
 
-A consensus caller which accepts a headed SAM/BAM input and generates a majority consensus,  reconciling small indels described in CIGAR fields so as to maximise read-reference concordance. Kindel also permits recovery of consensus sequence across highly divergent regions (such as  those encoding viral envelope proteins) where regions of reads cannot be aligned. With **`--realign`**, Kindel identifies regions of the reference that are clip-dominant (>depth\*0.5) and attempts to assemble a patched consensus using the unaligned sequence context. Existing consensus calling approaches are complicated and often involve a variant calling step. An [elegant streaming approach](https://github.com/karel-brinda/ococo) was recently released but cannot reconcile indels.
+A consensus caller that generates majority consensus sequence(s) from a BAM file, reconciling small  CIGAR-described indels so as to maximise read-to-reference concordance. Kindel also permits recovery of consensus sequence across highly divergent regions (such as  those encoding viral envelope proteins) where regions of reads cannot be aligned. With **`--realign`**, Kindel identifies regions of the reference that are clip-dominant (>depth\*0.5) and attempts to assemble a patched consensus using the unaligned sequence context. Existing consensus calling approaches are complicated and often involve a variant calling step. An [elegant streaming approach](https://github.com/karel-brinda/ococo) was recently released but cannot reconcile indels. Update: [Pilon](https://github.com/broadinstitute/pilon) now exists.
 
 
 
@@ -26,20 +26,26 @@ A consensus caller which accepts a headed SAM/BAM input and generates a majority
 
 
 ## Features
-- [x] Reconciliation of CIGAR described insertions and deletions
+- [x] Reconciliation of aligned substititutions, insertions and deletions
 - [x] Gap closure (`--realign`) using overlapping soft-clipped alignment context
-- [x] Support SAMs from multiple aligners – (currently tested BWA MEM, Segemehl)
-  - [ ] Accept unmapped fastq input
-  - [ ] Minimap2 support
+- [x] Tested against BAM output from BWA, Minimap2 and Segemehl 
+- [ ] Support for BAMs with multiple reference contigs, chromosomes
 - [x] Frequency based variant calling with `kindel variants` (no VCF output currently)
-- [x] Plotting of clip frequencies
-- [ ] 
+- [x] Plotting
+
+
+
+### Todo
+
+- [ ] Fix broken SAM parsing (BAM works fine)
+
 - [ ] Customisable threshold weight
-- [ ] Support for mutiple reference sequences (untested)
-- [ ] C++ version (early stages)
 
+- [ ] Numpy rewrite to handle bacterial long read sequences
 
-
+- [ ] Parallelism
+  
+  
 
 ## Installation
 

@@ -9,10 +9,12 @@ from kindel import kindel
 
 
 bwa_path = 'tests/data_bwa_mem/'
-seg_path = 'tests/data_sehemehl/'
+seg_path = 'tests/data_segemehl/'
+mm2_path = 'tests/data_minimap2/'
 
 bwa_fns = [bwa_path + fn for fn in os.listdir(bwa_path) if fn.endswith('.bam')]
 seg_fns = [seg_path + fn for fn in os.listdir(seg_path) if fn.endswith('.bam')]
+mm2_fns = [mm2_path + fn for fn in os.listdir(mm2_path) if fn.endswith('.bam')]
 
 test_aln = list(kindel.parse_bam(bwa_path + '1.1.sub_test.bam').values())[0]
 
@@ -61,12 +63,19 @@ def test_bam_to_consensus_bwa():
         assert kindel.bam_to_consensus(fn)
 
 
+def test_bam_to_consensus_minimap2():
+    for fn in mm2_fns:
+        assert kindel.bam_to_consensus(fn)
+
+
 def test_bam_to_consensus_realign_bwa():
     for fn in bwa_fns:
         assert kindel.bam_to_consensus(fn, realign=True)
 
 def test_weights():
-    kindel.weights(bwa_fns[0], relative=True) 
+    kindel.weights(bwa_fns[0], relative=True)
+
+
 
 
 # CLI

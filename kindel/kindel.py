@@ -119,9 +119,9 @@ def parse_bam(bam_path):
     if '*' in refs_records:
         del refs_records['*']
 
-    assert len(refs_records) <= 1, 'Detected primary mappings to more than one reference'
+    # assert len(refs_records) <= 1, 'Detected primary mappings to more than one reference'
     # Use samtools view to extract single contig primary mappings
-    # Otherwise would make a useful enhancement 
+    # Otherwise would make a useful enhancement
 
     for ref_id, records in refs_records.items():
         alignments[ref_id] = parse_records(ref_id, refs_lens[ref_id], records)
@@ -315,7 +315,9 @@ def consensus_sequence(weights, clip_start_weights, clip_end_weights, insertions
     consensus_seq = ''
     changes = [None] * len(weights)
     skip_positions = 0
-    for pos, weight in tqdm.tqdm(enumerate(weights), total=len(weights), desc='building consensus'):
+    for pos, weight in tqdm.tqdm(enumerate(weights),
+                                 total=len(weights),
+                                 desc='building consensus'):
         if skip_positions:
             skip_positions -= 1
             continue
@@ -357,7 +359,7 @@ def consensus_seqrecord(consensus, ref_id):
     return SeqRecord(Seq(consensus), id=ref_id + '_cns', description='')
 
 
-def build_report(weights, changes, cdr_patches, bam_path, realign, min_depth, min_overlap,
+def build_report(ref_id, weights, changes, cdr_patches, bam_path, realign, min_depth, min_overlap,
                  clip_decay_threshold, trim_ends, uppercase):
     aligned_depth = [sum({nt:w[nt] for nt in list('ACGT')}.values()) for w in weights]
     ambiguous_sites = []
@@ -372,6 +374,7 @@ def build_report(weights, changes, cdr_patches, bam_path, realign, min_depth, mi
         elif change == 'D':
             deletion_sites.append(str(pos))
     report = '========================= REPORT ===========================\n'
+    report += 'reference: {}\n'.format(ref_id)
     report += 'options:\n'
     report += '- bam_path: {}\n'.format(bam_path)
     report += '- realign: {}\n'.format(realign)
@@ -387,15 +390,16 @@ def build_report(weights, changes, cdr_patches, bam_path, realign, min_depth, mi
     report += '- insertion sites: {}\n'.format(', '.join(insertion_sites))
     report += '- deletion sites: {}\n'.format(', '.join(deletion_sites))
     report += '- clip-dominant regions: {}\n'.format(', '.join(cdr_patches_fmt))
-    report += '============================================================\n'
 
     return report
 
 
 def bam_to_consensus(bam_path, realign=False, min_depth=2, min_overlap=7,
                      clip_decay_threshold=0.1, mask_ends=10, trim_ends=False, uppercase=False):
-    refs_consensuses = []
+    consensuses = []
     refs_changes = {}
+    refs_reports = {}
+    # for i, (ref_id, aln) in enumerate(parse_bam(bam_path).items()):
     for ref_id, aln in parse_bam(bam_path).items():
         if realign:
             cdrps = cdrp_consensuses(aln.weights, aln.clip_start_weights, aln.clip_end_weights,
@@ -410,14 +414,15 @@ def bam_to_consensus(bam_path, realign=False, min_depth=2, min_overlap=7,
                                                 aln.clip_end_weights, aln.insertions,
                                                 aln.deletions, cdr_patches, trim_ends,
                                                 min_depth, uppercase)
-        report = build_report(aln.weights, changes, cdr_patches, bam_path, realign,
+        report = build_report(ref_id, aln.weights, changes, cdr_patches, bam_path, realign,
                               min_depth, min_overlap, clip_decay_threshold, trim_ends,
                               uppercase)
-        refs_consensuses.append(consensus_seqrecord(consensus, ref_id))
-    refs_changes[ref_id] = changes
-    result = namedtuple('result', ['consensuses', 'refs_changes', 'report'])
+        consensuses.append(consensus_seqrecord(consensus, ref_id))
+        refs_reports[ref_id] = report
+        refs_changes[ref_id] = changes
+    result = namedtuple('result', ['consensuses', 'refs_changes', 'refs_reports'])
 
-    return result(refs_consensuses, refs_changes, report)
+    return result(consensuses, refs_changes, refs_reports)
 
 
 def weights(bam_path: 'path to SAM/BAM file',

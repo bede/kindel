@@ -9,7 +9,7 @@ __version__ = re.search(r'__version__\s*=\s*[\'"]([^\'"]*)[\'"]',
 
 
 if sys.version_info[0] < 3:
-      sys.exit('Kindel requires Python >= 3.3')
+      sys.exit('Kindel requires Python >= 3.5')
 
 
 CLASSIFIERS = ['Environment :: Console',
@@ -21,12 +21,13 @@ CLASSIFIERS = ['Environment :: Console',
                'Operating System :: MacOS :: MacOS X',
                'Programming Language :: Python :: 3.5',
                'Programming Language :: Python :: 3.6',
+               'Programming Language :: Python :: 3.7',
                'Topic :: Scientific/Engineering :: Bio-Informatics']
 
 
 setup(name='kindel',
       version=__version__,
-      description='Indel-aware offline consensus calling for DNA alignments in SAM/BAM format',
+      description='Indel-aware consensus calling for DNA alignments in BAM format',
       url='https://github.com/bede/kindel',
       author='Bede Constantinides',
       author_email='bedeabc@gmail.com',
