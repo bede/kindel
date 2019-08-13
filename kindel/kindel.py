@@ -108,16 +108,16 @@ def parse_bam(bam_path):
     alignments = OrderedDict()
     with open(bam_path, 'r') as bam_fh:
         bam = simplesam.Reader(bam_fh)
-    refs_lens = {n.replace('SN:', ''): int(l[0].replace('LN:', ''))
-                 for n, l in bam.header['@SQ'].items()}
-    
-    refs_records = defaultdict(list)
-    for r in bam:
-        for id in refs_lens:
-            refs_records[r.rname].append(r)
-    
-    if '*' in refs_records:
-        del refs_records['*']
+        refs_lens = {n.replace('SN:', ''): int(l[0].replace('LN:', ''))
+                     for n, l in bam.header['@SQ'].items()}
+        
+        refs_records = defaultdict(list)
+        for r in bam:
+            for id in refs_lens:
+                refs_records[r.rname].append(r)
+        
+        if '*' in refs_records:
+            del refs_records['*']
 
     # assert len(refs_records) <= 1, 'Detected primary mappings to more than one reference'
     # Use samtools view to extract single contig primary mappings

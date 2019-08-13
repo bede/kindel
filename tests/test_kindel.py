@@ -14,7 +14,7 @@ mm2_path = 'tests/data_minimap2/'
 
 bwa_fns = [bwa_path + fn for fn in os.listdir(bwa_path) if fn.endswith('.bam')]
 seg_fns = [seg_path + fn for fn in os.listdir(seg_path) if fn.endswith('.bam')]
-mm2_fns = [mm2_path + fn for fn in os.listdir(mm2_path) if fn.endswith('.bam')]
+mm2_fns = [mm2_path + fn for fn in os.listdir(mm2_path) if fn.endswith('am')]
 
 test_aln = list(kindel.parse_bam(bwa_path + '1.1.sub_test.bam').values())[0]
 
