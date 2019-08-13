@@ -2,6 +2,8 @@ import sys
 import argh
 import pandas as pd
 
+from pprint import pprint
+
 from Bio import SeqIO
 
 from kindel import kindel
@@ -24,8 +26,7 @@ def consensus(bam_path: 'path to SAM/BAM file',
                                      mask_ends,
                                      trim_ends,
                                      uppercase)
-    print(result.report, file=sys.stderr)
-    # print(result.consensuses[1].seq, file=sys.stdout)
+    print('\n'.join([r for r in result.refs_reports.values()]), file=sys.stderr)
     SeqIO.write(result.consensuses, sys.stdout,'fasta')
 
 
