@@ -3,4 +3,5 @@
 __pycache__/
 .cache/
 dist/
+build/
 kindel.egg-info/

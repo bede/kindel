@@ -43,8 +43,12 @@ def parse_records(ref_id, ref_len, records):
     for record in tqdm.tqdm(records, desc='loading sequences'): # Progress bar
         q_pos = 0 
         r_pos = record.pos-1  # Zero indexed genome coordinates
+        if not record.mapped or len(record.seq <= 1):  # Skips reads with sequence '*' (Minimap2)
+            # Makes try except statement below redundant? Test
+            continue
         try:
             for i, cigarette in enumerate(record.cigars):  # StopIteration -> RuntimeError
+                # print(cigarette)
                 length, operation = cigarette
                 if operation == 'M' or operation == '=':
                     for _ in range(length):
@@ -62,6 +66,7 @@ def parse_records(ref_id, ref_len, records):
                 elif operation == 'S':
                     if i == 0:  # Count right-of-gap / l-clipped start positions (e.g. start of ref)
                         clip_ends[r_pos] += 1
+                        # print(record.seq[:length])
                         for gap_i in range(length):
                             q_nt = record.seq[gap_i].upper()
                             rel_r_pos = r_pos - length + gap_i
@@ -383,9 +388,9 @@ def build_report(ref_id, weights, changes, cdr_patches, bam_path, realign, min_d
     report += '- clip_decay_threshold: {}\n'.format(clip_decay_threshold)
     report += '- trim_ends: {}\n'.format(trim_ends)
     report += '- uppercase: {}\n'.format(uppercase)
-    report += '- min, max observed depth[50:-50]: {}, {}\n'.format(min(aligned_depth[50:-50]),
-                                                               max(aligned_depth))
     report += 'observations:\n'
+    report += '- min, max observed depth[50:-50]: {}, {}\n'.format(min(aligned_depth[50:-50]),
+                                                                   max(aligned_depth))
     report += '- ambiguous sites: {}\n'.format(', '.join(ambiguous_sites))
     report += '- insertion sites: {}\n'.format(', '.join(insertion_sites))
     report += '- deletion sites: {}\n'.format(', '.join(deletion_sites))
