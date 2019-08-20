@@ -14,7 +14,6 @@ from pprint import pprint
 
 from collections import OrderedDict, defaultdict, namedtuple
 
-from Bio import SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
@@ -43,46 +42,40 @@ def parse_records(ref_id, ref_len, records):
     for record in tqdm.tqdm(records, desc='loading sequences'): # Progress bar
         q_pos = 0 
         r_pos = record.pos-1  # Zero indexed genome coordinates
-        if not record.mapped or len(record.seq <= 1):  # Skips reads with sequence '*' (Minimap2)
-            # Makes try except statement below redundant? Test
+        if not record.mapped or len(record.seq) <= 1:  # Skips unmapped, reads with sequence '*'
             continue
-        try:
-            for i, cigarette in enumerate(record.cigars):  # StopIteration -> RuntimeError
-                # print(cigarette)
-                length, operation = cigarette
-                if operation == 'M' or operation == '=':
-                    for _ in range(length):
-                        q_nt = record.seq[q_pos].upper()
-                        weights[r_pos][q_nt] += 1
-                        r_pos += 1
-                        q_pos += 1
-                elif operation == 'I':
-                    nts = record.seq[q_pos:q_pos+length].upper()
-                    insertions[r_pos][nts] += 1
+        for i, cigarette in enumerate(record.cigars):  # StopIteration -> RuntimeError
+            length, operation = cigarette
+            if operation == 'M' or operation == '=':
+                for _ in range(length):
+                    q_nt = record.seq[q_pos].upper()
+                    weights[r_pos][q_nt] += 1
+                    r_pos += 1
+                    q_pos += 1
+            elif operation == 'I':
+                nts = record.seq[q_pos:q_pos+length].upper()
+                insertions[r_pos][nts] += 1
+                q_pos += length
+            elif operation == 'D':
+                deletions[r_pos] += 1
+                r_pos += length
+            elif operation == 'S':
+                if i == 0:  # Count right-of-gap / l-clipped start positions (e.g. start of ref)
+                    clip_ends[r_pos] += 1
+                    for gap_i in range(length):
+                        q_nt = record.seq[gap_i].upper()
+                        rel_r_pos = r_pos - length + gap_i
+                        if rel_r_pos >= 0:
+                            clip_end_weights[rel_r_pos][q_nt] += 1
                     q_pos += length
-                elif operation == 'D':
-                    deletions[r_pos] += 1
-                    r_pos += length
-                elif operation == 'S':
-                    if i == 0:  # Count right-of-gap / l-clipped start positions (e.g. start of ref)
-                        clip_ends[r_pos] += 1
-                        # print(record.seq[:length])
-                        for gap_i in range(length):
-                            q_nt = record.seq[gap_i].upper()
-                            rel_r_pos = r_pos - length + gap_i
-                            if rel_r_pos >= 0:
-                                clip_end_weights[rel_r_pos][q_nt] += 1
-                        q_pos += length
-                    else:  # Count left-of-gap / r-clipped start position (e.g. end of ref)
-                        clip_starts[r_pos] += 1 
-                        for pos in range(length):
-                            q_nt = record.seq[q_pos].upper()
-                            if r_pos < ref_len:
-                                clip_start_weights[r_pos][q_nt] += 1
-                                r_pos += 1
-                                q_pos += 1
-        except RuntimeError:
-            pass  # Handle case where cigar is '*' and SimpleSam throws StopIteration
+                else:  # Count left-of-gap / r-clipped start position (e.g. end of ref)
+                    clip_starts[r_pos] += 1 
+                    for pos in range(length):
+                        q_nt = record.seq[q_pos].upper()
+                        if r_pos < ref_len:
+                            clip_start_weights[r_pos][q_nt] += 1
+                            r_pos += 1
+                            q_pos += 1
 
     aligned_depth = [sum(w.values()) for w in weights]
     weights_consensus_seq = ''.join([consensus(w)[0] for w in weights])
@@ -361,7 +354,7 @@ def consensus_sequence(weights, clip_start_weights, clip_end_weights, insertions
 
 
 def consensus_seqrecord(consensus, ref_id):
-    return SeqRecord(Seq(consensus), id=ref_id + '_cns', description='')
+    return SeqRecord(Seq(consensus), id=f'{ref_id}_cns')
 
 
 def build_report(ref_id, weights, changes, cdr_patches, bam_path, realign, min_depth, min_overlap,
@@ -399,7 +392,7 @@ def build_report(ref_id, weights, changes, cdr_patches, bam_path, realign, min_d
     return report
 
 
-def bam_to_consensus(bam_path, realign=False, min_depth=2, min_overlap=7,
+def bam_to_consensus(bam_path, realign=False, min_depth=1, min_overlap=7,
                      clip_decay_threshold=0.1, mask_ends=10, trim_ends=False, uppercase=False):
     consensuses = []
     refs_changes = {}
