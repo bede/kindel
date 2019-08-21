@@ -1,16 +1,22 @@
-# Kindel: indel-aware consensus calling
+# Kindel: indel-aware consensus
 
 [![JOSS status](http://joss.theoj.org/papers/117efd1fc35bb2011311f73d3fa0b545/status.svg)](http://joss.theoj.org/papers/117efd1fc35bb2011311f73d3fa0b545)  
 [![PyPI version](https://badge.fury.io/py/kindel.svg)](https://badge.fury.io/py/kindel)  
 [![Build Status](https://travis-ci.org/bede/kindel.svg?branch=master)](https://travis-ci.org/bede/kindel)  
 
-A consensus caller that generates majority consensus sequence(s) from just a BAM file, reconciling small  CIGAR-described indels to maximise read-to-reference concordance. Kindel also permits recovery of consensus sequence across highly divergent regions (such as  those encoding viral envelope proteins) where regions of reads cannot be aligned. With **`--realign`**, Kindel identifies regions of the reference that are clip-dominant (>depth\*0.5) and attempts to assemble a patched consensus using the unaligned sequence context. Existing consensus calling approaches are complicated and often involve a variant calling step. Developed for use with small virus genomes. An [elegant streaming approach](https://github.com/karel-brinda/ococo) was recently released but cannot reconcile indels. Update: [Pilon](https://github.com/broadinstitute/pilon) also now solves similar problems.
+
+
+Kindel reconciles substitutions and CIGAR-described indels to to produce a majority consensus from a SAM or BAM file. Kindel can optionally further recover consensus across unaligned regions (such as those frequently seen in RNA virus populations) using soft-clipped sequence information. With **`--realign`**, Kindel identifies regions of the reference that are clip-dominant (>depth\*0.5) and attempts to assemble a patched consensus using unaligned sequence context. Intended for use with small virus genomes and Illumina data, and tested against aligners BWA, Minimap2 and Segemehl. Developed after growing frustrated with dubious and overly complicated existing methods. I may improve performance for bacterial genomes in a future update. Update: [Pilon](https://github.com/broadinstitute/pilon) also now solves similar problems rather well. **If your BAM generates errors, please open an issue and I'll try to fix it. Please also cite the [JOSS article](http://joss.theoj.org/papers/117efd1fc35bb2011311f73d3fa0b545) if you find this useful.**
+
+
 
 
 
 ### Core functionality
 
 ![clip-dominant region](kindelflow.png)
+
+
 
 
 
@@ -25,33 +31,38 @@ A consensus caller that generates majority consensus sequence(s) from just a BAM
 
 
 
+
 ## Features
-- [x] Consensus of aligned substititutions, insertions and deletions
 
-- [x] Gap closure (`--realign`) using overlapping soft-clipped alignment context
+- Consensus of aligned substititutions, insertions and deletions
+- Gap closure (`--realign`) using overlapping soft-clipped alignment context
+- Tested with Illumina alignments from BWA, Minimap2 and Segemehl 
+- Support for BAMs with multiple reference contigs, chromosomes
+- Crude frequency-based variant calling with `kindel variants` (no VCF output)
 
-- [x] Tested with Illumina alignments from BWA, Minimap2 and Segemehl 
 
-- [x] Support for BAMs with multiple reference contigs, chromosomes
 
-- [x] Naive frequency-based variant calling with `kindel variants` (no VCF output)
 
-  
 
 ### Todo
-- [ ] Customisable threshold weight
-- [ ] Numpy rewrite to handle bacterial long read sequences
-- [ ] Optionally gap fill using a supplied reference
-- [ ] Parallelism
+
+- [ ] Customisable clipping threshold weight
+- [ ] Improve performance with bacterial genomes and long reads
+- [ ] Optionally fill gaps using a supplied reference
+- [ ] Parallelisation
+
+
 
 
 
 ## Limitations
 
-- [ ] Slow (10-20k records/s), & will probably explode with bacterial genomes
-- [ ] SAM/BAM files must contain an SQ header line with reference sequence(s) length
-- [ ] Able to close gaps of up to 2x read length given adequate depth of coverage
-- [ ] May require multiple runs to converge on a consensus
+- Slow (10-20k records/s), & will probably explode with bacterial genomes
+- SAM/BAM files must contain an SQ header line with reference sequence(s) length
+- Able to close gaps of up to 2x read length given adequate depth of coverage
+- May require multiple runs to converge on a consensus
+
+
 
 
 
@@ -69,7 +80,10 @@ Dependencies should automatically installed, except for Samtools which is needed
 
 Also see [`usage.ipynb`](usage.ipynb)
 
+
+
 ### Command line
+
 ```bash
 $ kindel consensus alignment.bam > cns.fa
 ```
@@ -170,7 +184,7 @@ kindel.bam_to_consensus(bam_path, realign=False, min_depth=2, min_overlap=7,
 
 ## Issues
 
-Please let me know if you run into problems by opening a GitHub issue, tweeting [@beconstant](https://twitter.com/beconstant) or mailing me via `b at bede dawt im`.
+Please let me know if you run into problems by opening a GitHub issue, tweeting [@beconstant](https://twitter.com/beconstant) or mailing me via `b at bede dawt im`. Ideally send me your BAM, or a subsample of it!
 
 
 
