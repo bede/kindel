@@ -9,7 +9,7 @@ __version__ = re.search(r'__version__\s*=\s*[\'"]([^\'"]*)[\'"]',
 
 
 if sys.version_info[0] < 3:
-      sys.exit('Kindel requires Python >= 3.5')
+      sys.exit('Kindel requires Python >= 3.6')
 
 
 CLASSIFIERS = ['Environment :: Console',
@@ -19,7 +19,6 @@ CLASSIFIERS = ['Environment :: Console',
                'Natural Language :: English',
                'Operating System :: POSIX :: Linux',
                'Operating System :: MacOS :: MacOS X',
-               'Programming Language :: Python :: 3.5',
                'Programming Language :: Python :: 3.6',
                'Programming Language :: Python :: 3.7',
                'Topic :: Scientific/Engineering :: Bio-Informatics']

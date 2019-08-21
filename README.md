@@ -58,8 +58,8 @@ A consensus caller that generates majority consensus sequence(s) from just a BAM
 ## Installation
 
 ```python
-# Requires Python 3.5+
-pip3 install kindel
+# Requires Python 3.6+
+pip install kindel
 ```
 Dependencies should automatically installed, except for Samtools which is needed for BAM input.
 
