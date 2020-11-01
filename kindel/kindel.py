@@ -375,15 +375,15 @@ def build_report(ref_id, weights, changes, cdr_patches, bam_path, realign, min_d
     report += 'reference: {}\n'.format(ref_id)
     report += 'options:\n'
     report += '- bam_path: {}\n'.format(bam_path)
-    report += '- realign: {}\n'.format(realign)
     report += '- min_depth: {}\n'.format(min_depth)
-    report += '- min_overlap: {}\n'.format(min_overlap)
-    report += '- clip_decay_threshold: {}\n'.format(clip_decay_threshold)
+    report += '- realign: {}\n'.format(realign)
+    report += '    - min_overlap: {}\n'.format(min_overlap)
+    report += '    - clip_decay_threshold: {}\n'.format(clip_decay_threshold)
     report += '- trim_ends: {}\n'.format(trim_ends)
     report += '- uppercase: {}\n'.format(uppercase)
     report += 'observations:\n'
-    report += '- min, max observed depth[50:-50]: {}, {}\n'.format(min(aligned_depth[50:-50]),
-                                                                   max(aligned_depth))
+    report += '- min, max observed depth: {}, {}\n'.format(min(aligned_depth),
+                                                           max(aligned_depth))
     report += '- ambiguous sites: {}\n'.format(', '.join(ambiguous_sites))
     report += '- insertion sites: {}\n'.format(', '.join(insertion_sites))
     report += '- deletion sites: {}\n'.format(', '.join(deletion_sites))
