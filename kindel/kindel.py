@@ -46,7 +46,7 @@ def parse_records(ref_id, ref_len, records):
             continue
         for i, cigarette in enumerate(record.cigars):  # StopIteration -> RuntimeError
             length, operation = cigarette
-            if operation == 'M' or operation == '=':
+            if operation in {'M', '=', 'X'}:  # Catch SAM 1.{3,4} matches and subs 
                 for _ in range(length):
                     q_nt = record.seq[q_pos].upper()
                     weights[r_pos][q_nt] += 1
