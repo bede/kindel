@@ -354,7 +354,7 @@ def consensus_sequence(weights, clip_start_weights, clip_end_weights, insertions
 
 
 def consensus_seqrecord(consensus, ref_id):
-    return SeqRecord(Seq(consensus), id=f'{ref_id}_cns')
+    return SeqRecord(Seq(consensus), id=f'{ref_id}_cns', description='')
 
 
 def build_report(ref_id, weights, changes, cdr_patches, bam_path, realign, min_depth, min_overlap,

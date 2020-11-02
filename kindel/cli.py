@@ -11,7 +11,7 @@ from kindel import kindel
 
 def consensus(bam_path: 'path to SAM/BAM file',
               realign: 'attempt to reconstruct reference around soft-clip boundaries'=False,
-              min_depth: 'substitute Ns at coverage depths beneath this value'=2,
+              min_depth: 'substitute Ns at coverage depths beneath this value'=1,
               min_overlap: 'match length required to close soft-clipped gaps'=7,
               clip_decay_threshold: 'read depth fraction at which to cease clip extension'=0.1,
               mask_ends: 'ignore clip dominant positions within n positions of termini'=50,
