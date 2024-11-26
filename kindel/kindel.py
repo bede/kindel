@@ -361,7 +361,8 @@ def consensus_sequence(weights, clip_start_weights, clip_end_weights, insertions
         if cdr_patches and any(r.start == pos and r.seq for r in cdr_patches):
             cdr_patch = next(r for r in cdr_patches if r.start == pos)
             consensus_seq += cdr_patch.seq.lower()
-            skip_positions += len(cdr_patch.seq) - 1
+            cdr_span = cdr_patch.end - cdr_patch.start
+            skip_positions += cdr_span - 1
             continue
         ins_freq = sum(insertions[pos].values()) if insertions[pos] else 0
         del_freq = deletions[pos]
