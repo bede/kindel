@@ -6,7 +6,6 @@ import os
 # import sys
 # import argh
 import tqdm
-import difflib
 import simplesam
 # import subprocess
 import scipy.stats
@@ -29,7 +28,7 @@ def parse_records(ref_id, ref_len, records):
     '''
     Iterate over records, returning namedtuple of base frequencies, indels and soft clipping info
     weights: lists of dicts of base frequencies after CIGAR reconciliation
-    insertions, deletions, deletion_depth: list of dicts of base frequencies
+    insertions, deletions: list of dicts of base frequencies
     clip_starts, clip_ends: lists of clipping start and end frequencies in an LTR direction
     clip_start_weights, clip_end_weights: base frequencies from left- and right-clipped regions
     '''
@@ -40,7 +39,6 @@ def parse_records(ref_id, ref_len, records):
     clip_ends = [0] * (ref_len + 1)
     insertions = [defaultdict(int) for p in range(ref_len + 1)]
     deletions = [0] * (ref_len + 1)
-    deletion_depth = [0] * (ref_len + 1)
     for record in tqdm.tqdm(records, desc='loading sequences'): # Progress bar
         q_pos = 0
         r_pos = record.pos-1  # Zero indexed genome coordinates
@@ -59,9 +57,8 @@ def parse_records(ref_id, ref_len, records):
                 insertions[r_pos][nts] += 1
                 q_pos += length
             elif operation == 'D':
-                deletions[r_pos] += 1
                 for del_i in range(length):
-                    deletion_depth[r_pos+del_i] += 1
+                    deletions[r_pos+del_i] += 1
                 r_pos += length
             elif operation == 'S':
                 if i == 0:  # Count right-of-gap / l-clipped start positions (e.g. start of ref)
@@ -91,14 +88,12 @@ def parse_records(ref_id, ref_len, records):
     clip_end_depth = [sum({nt:w[nt] for nt in list('ACGT')}.values()) for w in clip_end_weights]
     clip_depth = list(map(lambda x, y: x+y, clip_start_depth, clip_end_depth))
     alignment = namedtuple('alignment', ['ref_id', 'weights', 'insertions', 'deletions',
-                                         'deletion_depth',
                                          'clip_starts', 'clip_ends',
                                          'clip_start_weights', 'clip_end_weights',
                                          'clip_start_depth', 'clip_end_depth',
                                          'clip_depth', 'consensus_depth'])
 
     return alignment(ref_id, weights, insertions, deletions,
-                     deletion_depth,
                      clip_starts, clip_ends,
                      clip_start_weights, clip_end_weights,
                      clip_start_depth, clip_end_depth,
@@ -133,7 +128,7 @@ def parse_bam(bam_path):
     return alignments
 
 
-def cdr_start_consensuses(weights, deletion_depth, clip_start_weights, clip_start_depth,
+def cdr_start_consensuses(weights, deletions, clip_start_weights, clip_start_depth,
                           clip_decay_threshold, mask_ends):
     '''
     Returns list of Region instances for right clipped consensuses of clip-dominant region
@@ -142,7 +137,7 @@ def cdr_start_consensuses(weights, deletion_depth, clip_start_weights, clip_star
     masked_positions = positions[:mask_ends] + positions[-mask_ends:]
     regions = []
     logging.debug("cdr_start_consensuses()")
-    for pos, csd, w, dp, in zip(positions, clip_start_depth, weights, deletion_depth):
+    for pos, csd, w, dp, in zip(positions, clip_start_depth, weights, deletions):
         cdr_positions = []
         for r in regions:
             range_list = range(r.start, r.end)
@@ -155,8 +150,8 @@ def cdr_start_consensuses(weights, deletion_depth, clip_start_weights, clip_star
             for pos_, (csd_, sw_, w_, dd_) in enumerate(zip(clip_start_depth[pos:],
                                                       clip_start_weights[pos:],
                                                       weights[pos:],
-                                                      deletion_depth[pos:])):
-                logging.debug(f"start_pos: {start_pos}, pos: {pos_}, csd: {csd_}, sum (weights): {sum(w_.values())}, sum (deletion depth): {dd_}")
+                                                      deletions[pos:])):
+                logging.debug(f"start_pos: {start_pos}, pos: {pos_}, csd: {csd_}, sum (weights): {sum(w_.values())}, sum (deletions): {dd_}")
                 if csd_ > sum(w_.values(), dd_) * clip_decay_threshold:
                     clip_consensus += consensus(sw_)[0]
                 else:
@@ -170,13 +165,13 @@ def cdr_start_consensuses(weights, deletion_depth, clip_start_weights, clip_star
     return regions
 
 
-def cdr_end_consensuses(weights, deletion_depth, clip_end_weights, clip_end_depth, clip_decay_threshold, mask_ends):
+def cdr_end_consensuses(weights, deletions, clip_end_weights, clip_end_depth, clip_decay_threshold, mask_ends):
     '''
     Returns list of Region instances for left clipped consensuses of clip-dominant region
     '''
     positions = list(range(len(weights)))
     masked_positions = positions[:mask_ends] + positions[-mask_ends:]
-    reversed_weights = list(sorted(zip(positions, clip_end_depth, clip_end_weights, weights, deletion_depth),
+    reversed_weights = list(sorted(zip(positions, clip_end_depth, clip_end_weights, weights, deletions),
                                    key=lambda x: x[0], reverse=True))
     regions = []
     logging.debug("cdr_end_consensuses()")
@@ -190,7 +185,7 @@ def cdr_end_consensuses(weights, deletion_depth, clip_end_weights, clip_end_dept
             end_pos = pos + 1  # Start with end since we're iterating in reverse
             rev_clip_consensus = None
             for pos_, ced_, cew_, w_, dd_ in reversed_weights[len(positions)-pos:]:
-                logging.debug(f"end_pos: {end_pos}, pos: {pos_}, ced: {ced_}, sum (weights): {sum(w_.values())}, sum (deletion depth): {dd_}")
+                logging.debug(f"end_pos: {end_pos}, pos: {pos_}, ced: {ced_}, sum (weights): {sum(w_.values())}, sum (deletions): {dd_}")
                 if ced_ > sum(w_.values(), dd_) * clip_decay_threshold:
                     if not rev_clip_consensus:  # Add first base to account for lag in clip coverage
                         rev_clip_consensus = consensus(clip_end_weights[pos_+1])[0]
@@ -207,16 +202,16 @@ def cdr_end_consensuses(weights, deletion_depth, clip_end_weights, clip_end_dept
     return regions
 
 
-def cdrp_consensuses(weights, deletion_depth, clip_start_weights, clip_end_weights, clip_start_depth,
+def cdrp_consensuses(weights, deletions, clip_start_weights, clip_end_weights, clip_start_depth,
                      clip_end_depth, clip_decay_threshold, mask_ends):
     '''
     Returns list of 2-tuples of L&R clipped consensus sequences around clip-dominant regions
     Pairs overlapping right- (→) and left- (←) clipped sequences around CDRs
     '''
-    combined_cdrs = (cdr_start_consensuses(weights, deletion_depth, clip_start_weights,
+    combined_cdrs = (cdr_start_consensuses(weights, deletions, clip_start_weights,
                                            clip_start_depth, clip_decay_threshold,
                                            mask_ends)
-                     + cdr_end_consensuses(weights, deletion_depth, clip_end_weights,
+                     + cdr_end_consensuses(weights, deletions, clip_end_weights,
                                            clip_end_depth, clip_decay_threshold,
                                            mask_ends))
     paired_cdrs = []
@@ -433,13 +428,13 @@ def build_report(ref_id, weights, changes, cdr_patches, bam_path, realign, min_d
 
 
 def bam_to_consensus(bam_path, realign=False, min_depth=1, min_overlap=7,
-                     clip_decay_threshold=0.1, mask_ends=10, trim_ends=False, uppercase=False):
+                     clip_decay_threshold=0.1, mask_ends=50, trim_ends=False, uppercase=False):
     consensuses = []
     refs_changes = {}
     refs_reports = {}
     for ref_id, aln in parse_bam(bam_path).items():
         if realign:
-            cdrps = cdrp_consensuses(aln.weights, aln.deletion_depth,
+            cdrps = cdrp_consensuses(aln.weights, aln.deletions,
                                      aln.clip_start_weights, aln.clip_end_weights,
                                      aln.clip_start_depth, aln.clip_end_depth,
                                      clip_decay_threshold, mask_ends)

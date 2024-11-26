@@ -1,9 +1,4 @@
 import os
-import sys
-import functools
-import concurrent.futures
-
-from Bio import SeqIO
 
 from kindel import kindel
 
@@ -36,21 +31,24 @@ def test_merge_by_lcs():
            'GCCGCTAGGGGCGCGTTCGGGCTCGCCAACATCTTCAGTCCGGGCGCTAAGCAGAACA')
     two = ('AACTGCCGCTAGGGGCGCGTTCGGGCTCGCCAACATCTTCAGTCCGGGCGCTAAGCAGAACATC',
            'GCAGATACCTACACCACCGGGGGAACTGCCGCTAGGGGCGCGTTCGGGCTCGCCAACATCTTCAGTCCGGGCGCTAAGCAGAACA')
-    short = ('AT', 'CG')
-    assert kindel.merge_by_lcs(*one) == 'AACTGCCGCTAGGGGCGCGTTCGGGCTCGCCAACATCTTCAGTCCGGGCGCTAAGCAGAACA'
-    assert kindel.merge_by_lcs(*two) == 'AACTGCCGCTAGGGGCGCGTTCGGGCTCGCCAACATCTTCAGTCCGGGCGCTAAGCAGAACA'
-    assert kindel.merge_by_lcs(*short) == None
+    three = ('TATTAATTATATTGTCTTCCCACCCTACAATTTGTAACTAATATACCATTTCGTTCATAGATCGATGATGCTGTTAAACTGTATGAGGAGTCAGAGCCATGGACGTTAATGCATTGCTGGAACATCCTTCGCCATGAAGCTAAATGGAGCGATAAGATGGGGGAGATAAATTTTAGAGGAACAAAAAAAAAAGTTAATAAGAGGGTTGAAGGAAAAAAAAAAGGGGAAAAGGGAAAATTTGGAAAGATGATAATGGGCAACCACCTCCACCTTAAGGAAGGGGAAAGGGCAAAAAAGCATGAGGGGAGGGGGAGCGGAGAAAAAAACATCTAGCACACATTAAAATTAAATTTTTTAA',
+             'AAAAAAATTAATAAAAAAAGAAGAAAAAATAATATGCTTGCCTTCCTTAATGTGAGAAGAGACAAACACCGGTATTTCCCTTTCTCTTTTATATGAATAAAATTTATTTTTATAATTATTTTTTTCTTTAATAATTTAACTTTTAAAAATTTAGAAAAAAAACATGGGGGTTTTTATCAAAGGAAAAAAAAATATTTTTTCGAAAACATTAAAGGCCCTTCTACAAGAAGTCAAGTTGCCATTTCTAACAAGTGGCTCACCATCCAAAAGGCGGTGAACAAATTCTGTGGTCATTTTTGGTTTGTTGAAAGGTTAGACAAAAGTGGAAAGACTGAGCAGGACCGAGTAAGTCAATGTGTATTAATTATATTG')
+    short = ('AAATGATG', 'ATGATGAA')  # LCS length 6
+    assert kindel.merge_by_lcs(*one, min_overlap=7) == 'AACTGCCGCTAGGGGCGCGTTCGGGCTCGCCAACATCTTCAGTCCGGGCGCTAAGCAGAACA'
+    assert kindel.merge_by_lcs(*two, min_overlap=7) == 'AACTGCCGCTAGGGGCGCGTTCGGGCTCGCCAACATCTTCAGTCCGGGCGCTAAGCAGAACA'
+    assert kindel.merge_by_lcs(*three, min_overlap=7) == 'TATTAATTATATTG'
+    assert kindel.merge_by_lcs(*short, min_overlap=7) == None
 
 
 # FUNCTIONAL
 
 def test_parse_bam():
     assert test_aln.ref_id == 'ENA|EU155341|EU155341.2'
-    assert len(test_aln.weights) == 9306 
+    assert len(test_aln.weights) == 9306
 
 
 def test_cdrp_consensuses():
-    cdrps = kindel.cdrp_consensuses(test_aln.weights, test_aln.clip_start_weights,
+    cdrps = kindel.cdrp_consensuses(test_aln.weights, test_aln.deletions, test_aln.clip_start_weights,
                                     test_aln.clip_end_weights, test_aln.clip_start_depth,
                                     test_aln.clip_end_depth, 0.1, 10)
     print(cdrps)
@@ -74,13 +72,3 @@ def test_bam_to_consensus_realign_bwa():
 
 def test_weights():
     kindel.weights(bwa_fns[0], relative=True)
-
-
-
-
-# CLI
-
-
-
-
-# SAMPLE-SPECIFIC FUNCTIONAL REGRESSION
