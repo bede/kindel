@@ -172,7 +172,7 @@ def cdr_end_consensuses(weights, clip_end_weights, clip_end_depth, clip_decay_th
                          for t in u]
         if ec/(sum(w.values())+1) > 0.5 and pos not in masked_positions + cdr_positions:
             end_pos = pos + 1  # Start with end since we're iterating in reverse
-            rev_clip_consensus = None
+            rev_clip_consensus = ''
             for pos_, ec_, ew_, w_ in reversed_weights[len(positions)-pos:]:
                 if ec_ > sum(w_.values()) * clip_decay_threshold:
                     if not rev_clip_consensus:  # Add first base to account for lag in clip coverage
@@ -213,25 +213,37 @@ def cdrp_consensuses(weights, clip_start_weights, clip_end_weights, clip_start_d
     return paired_cdrs
 
 
-def merge_by_lcs(s1, s2, min_overlap=7):
+def merge_by_lcs(s1, s2, min_overlap):
     '''Returns superstring of s1 and s2 about an exact overlap of len > min_overlap'''
-    s = difflib.SequenceMatcher(None, s1, s2)
-    pos_a, pos_b, size = s.find_longest_match(0, len(s1), 0, len(s2))
-    if size < min_overlap:
-        return None
-    overlap = s1[pos_a:pos_a+size]
-    pre = s1[:s1.find(overlap)]
-    post = s2[s2.find(overlap)+len(overlap):]
+    def lcs(s1, s2):
+        m = [[0]*(1+len(s2)) for i in range(1+len(s1))]
+        longest, x_longest = 0, 0
+        for x in range(1,1+len(s1)):
+            for y in range(1,1+len(s2)):
+                if s1[x-1] == s2[y-1]:
+                    m[x][y] = m[x-1][y-1] + 1
+                    if m[x][y]>longest:
+                        longest = m[x][y]
+                        x_longest  = x
+                else:
+                    m[x][y] = 0
+        return s1[x_longest-longest: x_longest]
 
-    return pre + overlap + post
+    longest_common_subsequence = lcs(s1, s2)
+    if len(longest_common_subsequence) < min_overlap:
+        return None  # Failed
+    left_part = s1.split(longest_common_subsequence, 1)[0]
+    right_part = s2.split(longest_common_subsequence, 1)[1]
+    merged_sequence = left_part + longest_common_subsequence + right_part
+    return merged_sequence
 
 
-def merge_cdrps(cdrps):
+def merge_cdrps(cdrps, min_overlap):
     '''Returns merged clip-dominant region pairs as Region instances'''
     merged_cdrps = []
     for cdrp in cdrps:
         fwd_cdr, rev_cdr = cdrp
-        merged_seq = merge_by_lcs(fwd_cdr.seq, rev_cdr.seq)  # Fails as None
+        merged_seq = merge_by_lcs(fwd_cdr.seq, rev_cdr.seq, min_overlap)  # Fails as None
         merged_cdrps.append(Region(fwd_cdr.start, rev_cdr.end, merged_seq, None))
 
     return merged_cdrps
@@ -403,7 +415,7 @@ def bam_to_consensus(bam_path, realign=False, min_depth=1, min_overlap=7,
             cdrps = cdrp_consensuses(aln.weights, aln.clip_start_weights, aln.clip_end_weights,
                                      aln.clip_start_depth, aln.clip_end_depth,
                                      clip_decay_threshold, mask_ends)
-            cdr_patches = merge_cdrps(cdrps)
+            cdr_patches = merge_cdrps(cdrps, min_overlap)
 
         else:
             cdr_patches = None
