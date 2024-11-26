@@ -1,13 +1,6 @@
-# Author: Bede Constantinides - b|at|bede|dot|im, @beconstant
-# License: GPL V3
-
-# import io
 import os
-# import sys
-# import argh
 import tqdm
 import simplesam
-# import subprocess
 import scipy.stats
 
 import logging
@@ -19,7 +12,7 @@ from Bio.SeqRecord import SeqRecord
 import numpy as np
 import pandas as pd
 
-# logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.DEBUG)
 
 Region = namedtuple('Region', ['start', 'end', 'seq', 'direction'])
 
@@ -57,6 +50,7 @@ def parse_records(ref_id, ref_len, records):
                 insertions[r_pos][nts] += 1
                 q_pos += length
             elif operation == 'D':
+                print(f"Deletion at position {r_pos}")
                 for del_i in range(length):
                     deletions[r_pos+del_i] += 1
                 r_pos += length
@@ -342,7 +336,7 @@ def e_flanking_seq(end_pos, weights, min_depth, k):
     return flank_seq
 
 
-def consensus_sequence(weights, clip_start_weights, clip_end_weights, insertions, deletions,
+def consensus_sequence(weights, insertions, deletions,
                        cdr_patches, trim_ends, min_depth, uppercase):
     consensus_seq = ''
     changes = [None] * len(weights)
@@ -443,8 +437,7 @@ def bam_to_consensus(bam_path, realign=False, min_depth=1, min_overlap=7,
         else:
             cdr_patches = None
         # logging.debug(aln.weights, aln.clip_start_weights, aln.clip_end_weights, aln.insertions,  aln.deletions, cdr_patches, trim_ends, min_depth, uppercase)
-        consensus, changes = consensus_sequence(aln.weights, aln.clip_start_weights,
-                                                aln.clip_end_weights, aln.insertions,
+        consensus, changes = consensus_sequence(aln.weights, aln.insertions,
                                                 aln.deletions, cdr_patches, trim_ends,
                                                 min_depth, uppercase)
         report = build_report(ref_id, aln.weights, changes, cdr_patches, bam_path, realign,
@@ -582,35 +575,6 @@ def parse_samtools_depth(*args):
     return ids_depths
 
 
-# def plotly_samtools_depth(ids_depths):
-#     n_positions = len(ids_depths[max(ids_depths, key=lambda x: len(set(ids_depths[x])))])
-#     traces = []
-#     for id, depths in sorted(ids_depths.items()):
-#         traces.append(
-#             go.Scattergl(
-#                 x=list(range(1, n_positions)),
-#                 y=depths,
-#                 mode='lines',
-#                 name=id,
-#                 text=id))
-#     layout = go.Layout(
-#         title='Depth of coverage',
-#         xaxis=dict(
-#             title='Position',
-#             gridcolor='rgb(255, 255, 255)',
-#             gridwidth=2),
-#         yaxis=dict(
-#             title='Depth',
-#             gridcolor='rgb(255, 255, 255)',
-#             gridwidth=2,
-#             type='log'),
-#         paper_bgcolor='rgb(243, 243, 243)',
-#         plot_bgcolor='rgb(243, 243, 243)')
-
-#     fig = go.Figure(data=traces, layout=layout)
-#     py.plot(fig, filename='depths.html')
-
-
 def parse_variants(*args):
     ids_data = {}
     for arg in args:
@@ -619,36 +583,6 @@ def parse_variants(*args):
         df['max_alt'] = df[['A', 'C', 'G', 'T']].max(axis=1)
         ids_data[id] = df.to_dict('series')
     return ids_data
-
-
-def plotly_variants(ids_data):
-    import plotly.offline as py
-    import plotly.graph_objs as go
-    traces = []
-    for id, data in sorted(ids_data.items()):
-        traces.append(
-            go.Scattergl(
-                x=data['pos'],
-                y=data['max_alt'],
-                mode='markers',
-                name=id,
-                text=id))
-    layout = go.Layout(
-        title='Variants',
-        xaxis=dict(
-            title='Position',
-            gridcolor='rgb(255, 255, 255)',
-            gridwidth=2),
-        yaxis=dict(
-            title='Abundance',
-            gridcolor='rgb(255, 255, 255)',
-            gridwidth=2,
-            type='linear'),
-        paper_bgcolor='rgb(243, 243, 243)',
-        plot_bgcolor='rgb(243, 243, 243)')
-
-    fig = go.Figure(data=traces, layout=layout)
-    py.plot(fig, filename='variants.html')
 
 
 def plotly_clips(bam_path):
@@ -708,7 +642,7 @@ def plotly_clips(bam_path):
             autorange=True))
     fig = go.Figure(data=traces, layout=layout)
     out_fn = os.path.splitext(os.path.split(bam_path)[1])[0]
-    py.plot(fig, filename=out_fn + '.clips.html')
+    py.plot(fig, filename=out_fn + '.plot.html')
 
 
 if __name__ == '__main__':
