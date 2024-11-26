@@ -1,17 +1,17 @@
 # Author: Bede Constantinides - b|at|bede|dot|im, @beconstant
 # License: GPL V3
 
-import io
+# import io
 import os
-import sys
-import argh
+# import sys
+# import argh
 import tqdm
 import difflib
 import simplesam
-import subprocess
+# import subprocess
 import scipy.stats
-from pprint import pprint
 
+import logging
 from collections import OrderedDict, defaultdict, namedtuple
 
 from Bio.Seq import Seq
@@ -20,6 +20,7 @@ from Bio.SeqRecord import SeqRecord
 import numpy as np
 import pandas as pd
 
+# logging.basicConfig(level=logging.DEBUG)
 
 Region = namedtuple('Region', ['start', 'end', 'seq', 'direction'])
 
@@ -28,7 +29,7 @@ def parse_records(ref_id, ref_len, records):
     '''
     Iterate over records, returning namedtuple of base frequencies, indels and soft clipping info
     weights: lists of dicts of base frequencies after CIGAR reconciliation
-    insertions, deletions: list of dicts of base frequencies
+    insertions, deletions, deletion_depth: list of dicts of base frequencies
     clip_starts, clip_ends: lists of clipping start and end frequencies in an LTR direction
     clip_start_weights, clip_end_weights: base frequencies from left- and right-clipped regions
     '''
@@ -39,14 +40,15 @@ def parse_records(ref_id, ref_len, records):
     clip_ends = [0] * (ref_len + 1)
     insertions = [defaultdict(int) for p in range(ref_len + 1)]
     deletions = [0] * (ref_len + 1)
+    deletion_depth = [0] * (ref_len + 1)
     for record in tqdm.tqdm(records, desc='loading sequences'): # Progress bar
-        q_pos = 0 
+        q_pos = 0
         r_pos = record.pos-1  # Zero indexed genome coordinates
         if not record.mapped or len(record.seq) <= 1:  # Skips unmapped, reads with sequence '*'
             continue
         for i, cigarette in enumerate(record.cigars):  # StopIteration -> RuntimeError
             length, operation = cigarette
-            if operation in {'M', '=', 'X'}:  # Catch SAM 1.{3,4} matches and subs 
+            if operation in {'M', '=', 'X'}:  # Catch SAM 1.{3,4} matches and subs
                 for _ in range(length):
                     q_nt = record.seq[q_pos].upper()
                     weights[r_pos][q_nt] += 1
@@ -58,6 +60,8 @@ def parse_records(ref_id, ref_len, records):
                 q_pos += length
             elif operation == 'D':
                 deletions[r_pos] += 1
+                for del_i in range(length):
+                    deletion_depth[r_pos+del_i] += 1
                 r_pos += length
             elif operation == 'S':
                 if i == 0:  # Count right-of-gap / l-clipped start positions (e.g. start of ref)
@@ -69,7 +73,7 @@ def parse_records(ref_id, ref_len, records):
                             clip_end_weights[rel_r_pos][q_nt] += 1
                     q_pos += length
                 else:  # Count left-of-gap / r-clipped start position (e.g. end of ref)
-                    clip_starts[r_pos] += 1 
+                    clip_starts[r_pos] += 1
                     for pos in range(length):
                         q_nt = record.seq[q_pos].upper()
                         if r_pos < ref_len:
@@ -87,12 +91,14 @@ def parse_records(ref_id, ref_len, records):
     clip_end_depth = [sum({nt:w[nt] for nt in list('ACGT')}.values()) for w in clip_end_weights]
     clip_depth = list(map(lambda x, y: x+y, clip_start_depth, clip_end_depth))
     alignment = namedtuple('alignment', ['ref_id', 'weights', 'insertions', 'deletions',
+                                         'deletion_depth',
                                          'clip_starts', 'clip_ends',
                                          'clip_start_weights', 'clip_end_weights',
                                          'clip_start_depth', 'clip_end_depth',
                                          'clip_depth', 'consensus_depth'])
 
     return alignment(ref_id, weights, insertions, deletions,
+                     deletion_depth,
                      clip_starts, clip_ends,
                      clip_start_weights, clip_end_weights,
                      clip_start_depth, clip_end_depth,
@@ -108,12 +114,12 @@ def parse_bam(bam_path):
         bam = simplesam.Reader(bam_fh)
         refs_lens = {n.replace('SN:', ''): int(l[0].replace('LN:', ''))
                      for n, l in bam.header['@SQ'].items()}
-        
+
         refs_records = defaultdict(list)
         for r in bam:
             for id in refs_lens:
                 refs_records[r.rname].append(r)
-        
+
         if '*' in refs_records:
             del refs_records['*']
 
@@ -127,7 +133,7 @@ def parse_bam(bam_path):
     return alignments
 
 
-def cdr_start_consensuses(weights, clip_start_weights, clip_start_depth,
+def cdr_start_consensuses(weights, deletion_depth, clip_start_weights, clip_start_depth,
                           clip_decay_threshold, mask_ends):
     '''
     Returns list of Region instances for right clipped consensuses of clip-dominant region
@@ -135,70 +141,84 @@ def cdr_start_consensuses(weights, clip_start_weights, clip_start_depth,
     positions = list(range(len(weights)))
     masked_positions = positions[:mask_ends] + positions[-mask_ends:]
     regions = []
-    for pos, sc, w in zip(positions, clip_start_depth, weights):
-        cdr_positions = [t for u in [list(s)
-                         for s in [range(r.start, r.end)
-                         for r in regions]] 
-                         for t in u]
-        if sc/(sum(w.values())+1) > 0.5 and pos not in masked_positions + cdr_positions:           
+    logging.debug("cdr_start_consensuses()")
+    for pos, csd, w, dp, in zip(positions, clip_start_depth, weights, deletion_depth):
+        cdr_positions = []
+        for r in regions:
+            range_list = range(r.start, r.end)
+            for s in range_list:
+                cdr_positions.append(s)
+        if csd/(sum(w.values())+dp+1) > 0.5 and pos not in masked_positions + cdr_positions:
+            logging.debug(f"Starting extension")
             start_pos = pos
             clip_consensus = ''
-            for pos_, (sc_, sw_, w_) in enumerate(zip(clip_start_depth[pos:],
+            for pos_, (csd_, sw_, w_, dd_) in enumerate(zip(clip_start_depth[pos:],
                                                       clip_start_weights[pos:],
-                                                      weights[pos:])):
-                if sc_ > sum(w_.values()) * clip_decay_threshold:
+                                                      weights[pos:],
+                                                      deletion_depth[pos:])):
+                logging.debug(f"start_pos: {start_pos}, pos: {pos_}, csd: {csd_}, sum (weights): {sum(w_.values())}, sum (deletion depth): {dd_}")
+                if csd_ > sum(w_.values(), dd_) * clip_decay_threshold:
                     clip_consensus += consensus(sw_)[0]
                 else:
                     end_pos =  start_pos + pos_
+                    logging.debug(f"Stopping extension")
                     break
             regions.append(Region(start_pos, end_pos, clip_consensus, '→'))
 
+    for region in regions:
+        logging.debug(region)
     return regions
 
 
-def cdr_end_consensuses(weights, clip_end_weights, clip_end_depth, clip_decay_threshold, mask_ends):
+def cdr_end_consensuses(weights, deletion_depth, clip_end_weights, clip_end_depth, clip_decay_threshold, mask_ends):
     '''
     Returns list of Region instances for left clipped consensuses of clip-dominant region
     '''
     positions = list(range(len(weights)))
     masked_positions = positions[:mask_ends] + positions[-mask_ends:]
-    reversed_weights = list(sorted(zip(positions, clip_end_depth, clip_end_weights, weights),
+    reversed_weights = list(sorted(zip(positions, clip_end_depth, clip_end_weights, weights, deletion_depth),
                                    key=lambda x: x[0], reverse=True))
     regions = []
-    for i, (pos, ec, ew, w) in enumerate(reversed_weights):
-        cdr_positions = [t for u in [list(s)
-                         for s in [range(r.start, r.end)
-                         for r in regions]] 
-                         for t in u]
-        if ec/(sum(w.values())+1) > 0.5 and pos not in masked_positions + cdr_positions:
+    logging.debug("cdr_end_consensuses()")
+    for pos, ced, _, w, dp in reversed_weights:
+        cdr_positions = []
+        for r in regions:
+            for s in range(r.start, r.end):
+                cdr_positions.append(s)
+        if ced/(sum(w.values())+dp+1) > 0.5 and pos not in masked_positions + cdr_positions:
+            logging.debug(f"Starting extension")
             end_pos = pos + 1  # Start with end since we're iterating in reverse
             rev_clip_consensus = None
-            for pos_, ec_, ew_, w_ in reversed_weights[len(positions)-pos:]:
-                if ec_ > sum(w_.values()) * clip_decay_threshold:
+            for pos_, ced_, cew_, w_, dd_ in reversed_weights[len(positions)-pos:]:
+                logging.debug(f"end_pos: {end_pos}, pos: {pos_}, ced: {ced_}, sum (weights): {sum(w_.values())}, sum (deletion depth): {dd_}")
+                if ced_ > sum(w_.values(), dd_) * clip_decay_threshold:
                     if not rev_clip_consensus:  # Add first base to account for lag in clip coverage
                         rev_clip_consensus = consensus(clip_end_weights[pos_+1])[0]
-                    rev_clip_consensus += consensus(ew_)[0]
+                    rev_clip_consensus += consensus(cew_)[0]
                 else:
-                    
                     start_pos = pos_
                     clip_consensus = rev_clip_consensus[::-1]
+                    logging.debug(f"Stopping extension")
                     break
             regions.append(Region(start_pos, end_pos, clip_consensus, '←'))
 
+    for region in regions:
+        logging.debug(region)
     return regions
 
 
-def cdrp_consensuses(weights, clip_start_weights, clip_end_weights, clip_start_depth,
+def cdrp_consensuses(weights, deletion_depth, clip_start_weights, clip_end_weights, clip_start_depth,
                      clip_end_depth, clip_decay_threshold, mask_ends):
     '''
     Returns list of 2-tuples of L&R clipped consensus sequences around clip-dominant regions
-    Pairs overlapping right (→) and left (←) clipped sequences around CDRs
+    Pairs overlapping right- (→) and left- (←) clipped sequences around CDRs
     '''
-    combined_cdrs = (cdr_start_consensuses(weights, clip_start_weights, clip_start_depth,
-                                           clip_decay_threshold, mask_ends)
-                     + cdr_end_consensuses(weights, clip_end_weights, clip_end_depth,
-                                           clip_decay_threshold, mask_ends))
-    # print('COMBINED_CDRS: {}'.format(len(combined_cdrs)))
+    combined_cdrs = (cdr_start_consensuses(weights, deletion_depth, clip_start_weights,
+                                           clip_start_depth, clip_decay_threshold,
+                                           mask_ends)
+                     + cdr_end_consensuses(weights, deletion_depth, clip_end_weights,
+                                           clip_end_depth, clip_decay_threshold,
+                                           mask_ends))
     paired_cdrs = []
     fwd_cdrs = [r for r in combined_cdrs if r.direction == '→']
     rev_cdrs = [r for r in combined_cdrs if r.direction == '←']
@@ -210,30 +230,49 @@ def cdrp_consensuses(weights, clip_start_weights, clip_end_weights, clip_start_d
                 paired_cdrs.append((fwd_cdr, rev_cdr))
                 break
 
+    logging.debug("cdrp_consensuses()")
+
     return paired_cdrs
 
 
-def merge_by_lcs(s1, s2, min_overlap=7):
+def merge_by_lcs(s1, s2, min_overlap):
     '''Returns superstring of s1 and s2 about an exact overlap of len > min_overlap'''
-    s = difflib.SequenceMatcher(None, s1, s2)
-    pos_a, pos_b, size = s.find_longest_match(0, len(s1), 0, len(s2))
-    if size < min_overlap:
-        return None
-    overlap = s1[pos_a:pos_a+size]
-    pre = s1[:s1.find(overlap)]
-    post = s2[s2.find(overlap)+len(overlap):]
+    def lcs(s1, s2):
+        m = [[0]*(1+len(s2)) for i in range(1+len(s1))]
+        longest, x_longest = 0, 0
+        for x in range(1,1+len(s1)):
+            for y in range(1,1+len(s2)):
+                if s1[x-1] == s2[y-1]:
+                    m[x][y] = m[x-1][y-1] + 1
+                    if m[x][y]>longest:
+                        longest = m[x][y]
+                        x_longest  = x
+                else:
+                    m[x][y] = 0
+        return s1[x_longest-longest: x_longest]
 
-    return pre + overlap + post
+    logging.debug(f"merge_by_lcs(): s1: {s1}, s2: {s2}, min_overlap: {min_overlap}")
+    longest_common_subsequence = lcs(s1, s2)
+    if len(longest_common_subsequence) < min_overlap:
+        return None  # Failed
+    left_part = s1.split(longest_common_subsequence, 1)[0]
+    right_part = s2.split(longest_common_subsequence, 1)[1]
+    merged_sequence = left_part + longest_common_subsequence + right_part
+    return merged_sequence
 
 
-def merge_cdrps(cdrps):
+def merge_cdrps(cdrps, min_overlap):
     '''Returns merged clip-dominant region pairs as Region instances'''
     merged_cdrps = []
     for cdrp in cdrps:
         fwd_cdr, rev_cdr = cdrp
-        merged_seq = merge_by_lcs(fwd_cdr.seq, rev_cdr.seq)  # Fails as None
+        merged_seq = merge_by_lcs(fwd_cdr.seq, rev_cdr.seq, min_overlap)  # Fails as None
+        if not merged_seq:
+            logging.warning(f"No overlap found for CDRP spanning positions {fwd_cdr.start}-{rev_cdr.end} (min_overlap = {min_overlap})")
         merged_cdrps.append(Region(fwd_cdr.start, rev_cdr.end, merged_seq, None))
 
+    logging.debug("Merged CDRPs")
+    logging.debug(merged_cdrps)
     return merged_cdrps
 
 
@@ -250,7 +289,7 @@ def consensus(weight):
     return(base, frequency, proportion, tie)
 
 
-def s_overhang_consensus(clip_start_weights, start_pos, min_depth, max_len=500):
+def s_overhang_consensus(clip_start_weights, start_pos, min_depth, max_len=1000):
     '''
     Returns consensus sequence (string) of clipped reads at specified position
     start_pos is the first position described by the CIGAR-S
@@ -266,7 +305,7 @@ def s_overhang_consensus(clip_start_weights, start_pos, min_depth, max_len=500):
     return consensus_overhang
 
 
-def e_overhang_consensus(clip_end_weights, start_pos, min_depth, max_len=500):
+def e_overhang_consensus(clip_end_weights, start_pos, min_depth, max_len=1000):
     '''
     Returns consensus sequence (string) of clipped reads at specified position
     end_pos is the last position described by the CIGAR-S
@@ -397,17 +436,17 @@ def bam_to_consensus(bam_path, realign=False, min_depth=1, min_overlap=7,
     consensuses = []
     refs_changes = {}
     refs_reports = {}
-    # for i, (ref_id, aln) in enumerate(parse_bam(bam_path).items()):
     for ref_id, aln in parse_bam(bam_path).items():
         if realign:
-            cdrps = cdrp_consensuses(aln.weights, aln.clip_start_weights, aln.clip_end_weights,
+            cdrps = cdrp_consensuses(aln.weights, aln.deletion_depth,
+                                     aln.clip_start_weights, aln.clip_end_weights,
                                      aln.clip_start_depth, aln.clip_end_depth,
                                      clip_decay_threshold, mask_ends)
-            cdr_patches = merge_cdrps(cdrps)
+            cdr_patches = merge_cdrps(cdrps, min_overlap)
 
         else:
             cdr_patches = None
-        # print(aln.weights, aln.clip_start_weights, aln.clip_end_weights, aln.insertions,  aln.deletions, cdr_patches, trim_ends, min_depth, uppercase)
+        # logging.debug(aln.weights, aln.clip_start_weights, aln.clip_end_weights, aln.insertions,  aln.deletions, cdr_patches, trim_ends, min_depth, uppercase)
         consensus, changes = consensus_sequence(aln.weights, aln.clip_start_weights,
                                                 aln.clip_end_weights, aln.insertions,
                                                 aln.deletions, cdr_patches, trim_ends,
@@ -483,10 +522,10 @@ def features(bam_path: 'path to SAM/BAM file'):
     weights_df['depth'] = weights_df[['A','C','G','T','N', 'd']].sum(axis=1)
     consensus_depths_df = weights_df[['A','C','G','T','N']].max(axis=1)
     weights_df['consensus'] = consensus_depths_df.divide(weights_df.depth)
-    
+
     for nt in ['A','C','G','T','N','i','d']:
         weights_df[[nt]] = weights_df[[nt]].divide(weights_df.depth, axis=0)
-    
+
     weights_df['shannon'] = [scipy.stats.entropy(x)
                              for x in weights_df[['A','C','G','T','i','d']].as_matrix()]
 
@@ -505,7 +544,7 @@ def variants(bam_path: 'path to SAM/BAM file',
     weights_df = weights(bam_path, no_confidence=True)
     weights = weights_df[['A','C','G','T']].to_dict('records')
     variant_sites = []
-    
+
     for i, weight in enumerate(weights):
         depth = sum(weight.values())
         consensus = consensus(weight)
@@ -547,33 +586,33 @@ def parse_samtools_depth(*args):
     return ids_depths
 
 
-def plotly_samtools_depth(ids_depths):
-    n_positions = len(ids_depths[max(ids_depths, key=lambda x: len(set(ids_depths[x])))])
-    traces = []
-    for id, depths in sorted(ids_depths.items()):
-        traces.append(
-            go.Scattergl(
-                x=list(range(1, n_positions)),
-                y=depths,
-                mode='lines',
-                name=id,
-                text=id))
-    layout = go.Layout(
-        title='Depth of coverage',
-        xaxis=dict(
-            title='Position',
-            gridcolor='rgb(255, 255, 255)',
-            gridwidth=2),
-        yaxis=dict(
-            title='Depth',
-            gridcolor='rgb(255, 255, 255)',
-            gridwidth=2,
-            type='log'),
-        paper_bgcolor='rgb(243, 243, 243)',
-        plot_bgcolor='rgb(243, 243, 243)')
+# def plotly_samtools_depth(ids_depths):
+#     n_positions = len(ids_depths[max(ids_depths, key=lambda x: len(set(ids_depths[x])))])
+#     traces = []
+#     for id, depths in sorted(ids_depths.items()):
+#         traces.append(
+#             go.Scattergl(
+#                 x=list(range(1, n_positions)),
+#                 y=depths,
+#                 mode='lines',
+#                 name=id,
+#                 text=id))
+#     layout = go.Layout(
+#         title='Depth of coverage',
+#         xaxis=dict(
+#             title='Position',
+#             gridcolor='rgb(255, 255, 255)',
+#             gridwidth=2),
+#         yaxis=dict(
+#             title='Depth',
+#             gridcolor='rgb(255, 255, 255)',
+#             gridwidth=2,
+#             type='log'),
+#         paper_bgcolor='rgb(243, 243, 243)',
+#         plot_bgcolor='rgb(243, 243, 243)')
 
-    fig = go.Figure(data=traces, layout=layout)
-    py.plot(fig, filename='depths.html')
+#     fig = go.Figure(data=traces, layout=layout)
+#     py.plot(fig, filename='depths.html')
 
 
 def parse_variants(*args):
@@ -631,9 +670,9 @@ def plotly_clips(bam_path):
             name = 'Aligned depth'),
         go.Scattergl(
             x = x_axis,
-            y = aln.consensus_depth,
+            y = aln.clip_depth,
             mode = 'lines',
-            name = 'Consensus depth'),
+            name = 'Soft clip total depth'),
         go.Scattergl(
             x = x_axis,
             y = aln.clip_start_depth,
@@ -663,7 +702,7 @@ def plotly_clips(bam_path):
             x = x_axis,
             y = aln.deletions,
             mode = 'markers',
-            name = 'Deletions')]
+            name = 'Deletions'),]
     layout = go.Layout(
         xaxis=dict(
             type='linear',
