@@ -12,7 +12,7 @@ from Bio.SeqRecord import SeqRecord
 import numpy as np
 import pandas as pd
 
-logging.basicConfig(level=logging.DEBUG)
+# logging.basicConfig(level=logging.DEBUG)
 
 Region = namedtuple('Region', ['start', 'end', 'seq', 'direction'])
 
@@ -50,7 +50,6 @@ def parse_records(ref_id, ref_len, records):
                 insertions[r_pos][nts] += 1
                 q_pos += length
             elif operation == 'D':
-                print(f"Deletion at position {r_pos}")
                 for del_i in range(length):
                     deletions[r_pos+del_i] += 1
                 r_pos += length

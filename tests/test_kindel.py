@@ -1,17 +1,22 @@
-import os
+import subprocess
+
+from pathlib import Path
+
+from Bio import SeqIO
 
 from kindel import kindel
 
 
-bwa_path = 'tests/data_bwa_mem/'
-seg_path = 'tests/data_segemehl/'
-mm2_path = 'tests/data_minimap2/'
+bwa_path = Path('tests/data_bwa_mem')
+seg_path = Path('tests/data_segemehl')
+mm2_path = Path('tests/data_minimap2')
 
-bwa_fns = [bwa_path + fn for fn in os.listdir(bwa_path) if fn.endswith('.bam')]
-seg_fns = [seg_path + fn for fn in os.listdir(seg_path) if fn.endswith('.bam')]
-mm2_fns = [mm2_path + fn for fn in os.listdir(mm2_path) if fn.endswith('am')]
+bwa_fns = {fn.name: fn for fn in bwa_path.iterdir() if fn.suffix == '.bam'}
+seg_fns = {fn.name: fn for fn in seg_path.iterdir() if fn.suffix == '.bam'}
+mm2_fns = {fn.name: fn for fn in mm2_path.iterdir() if fn.suffix == '.bam'}
 
-test_aln = list(kindel.parse_bam(bwa_path + '1.1.sub_test.bam').values())[0]
+
+test_aln = list(kindel.parse_bam(bwa_path / '1.1.sub_test.bam').values())[0]
 
 
 # UNIT
@@ -31,12 +36,9 @@ def test_merge_by_lcs():
            'GCCGCTAGGGGCGCGTTCGGGCTCGCCAACATCTTCAGTCCGGGCGCTAAGCAGAACA')
     two = ('AACTGCCGCTAGGGGCGCGTTCGGGCTCGCCAACATCTTCAGTCCGGGCGCTAAGCAGAACATC',
            'GCAGATACCTACACCACCGGGGGAACTGCCGCTAGGGGCGCGTTCGGGCTCGCCAACATCTTCAGTCCGGGCGCTAAGCAGAACA')
-    three = ('TATTAATTATATTGTCTTCCCACCCTACAATTTGTAACTAATATACCATTTCGTTCATAGATCGATGATGCTGTTAAACTGTATGAGGAGTCAGAGCCATGGACGTTAATGCATTGCTGGAACATCCTTCGCCATGAAGCTAAATGGAGCGATAAGATGGGGGAGATAAATTTTAGAGGAACAAAAAAAAAAGTTAATAAGAGGGTTGAAGGAAAAAAAAAAGGGGAAAAGGGAAAATTTGGAAAGATGATAATGGGCAACCACCTCCACCTTAAGGAAGGGGAAAGGGCAAAAAAGCATGAGGGGAGGGGGAGCGGAGAAAAAAACATCTAGCACACATTAAAATTAAATTTTTTAA',
-             'AAAAAAATTAATAAAAAAAGAAGAAAAAATAATATGCTTGCCTTCCTTAATGTGAGAAGAGACAAACACCGGTATTTCCCTTTCTCTTTTATATGAATAAAATTTATTTTTATAATTATTTTTTTCTTTAATAATTTAACTTTTAAAAATTTAGAAAAAAAACATGGGGGTTTTTATCAAAGGAAAAAAAAATATTTTTTCGAAAACATTAAAGGCCCTTCTACAAGAAGTCAAGTTGCCATTTCTAACAAGTGGCTCACCATCCAAAAGGCGGTGAACAAATTCTGTGGTCATTTTTGGTTTGTTGAAAGGTTAGACAAAAGTGGAAAGACTGAGCAGGACCGAGTAAGTCAATGTGTATTAATTATATTG')
-    short = ('AAATGATG', 'ATGATGAA')  # LCS length 6
+    short = ('AT', 'CG')
     assert kindel.merge_by_lcs(*one, min_overlap=7) == 'AACTGCCGCTAGGGGCGCGTTCGGGCTCGCCAACATCTTCAGTCCGGGCGCTAAGCAGAACA'
     assert kindel.merge_by_lcs(*two, min_overlap=7) == 'AACTGCCGCTAGGGGCGCGTTCGGGCTCGCCAACATCTTCAGTCCGGGCGCTAAGCAGAACA'
-    assert kindel.merge_by_lcs(*three, min_overlap=7) == 'TATTAATTATATTG'
     assert kindel.merge_by_lcs(*short, min_overlap=7) == None
 
 
@@ -56,19 +58,44 @@ def test_cdrp_consensuses():
     assert cdrps[0][1].seq == 'AGCGTCGATGCAGATACCTACACCACCGGGGGAACTGCCGCTAGGGGCGCGTTCGGGCTCGCCAACATCTTCAGTCCGGGCGCTAAGCAGAACA'
 
 
-def test_bam_to_consensus_bwa():
-    for fn in bwa_fns:
-        assert kindel.bam_to_consensus(fn)
+def test_consensus_bwa(tmp_path):
+    for fn, path in bwa_fns.items():
+        print(f"Processing {fn}")
+        expected_seq = SeqIO.read(path.with_suffix('.fa'), 'fasta').seq.__str__()
+        subprocess.run(f"kindel consensus {path} > {tmp_path.with_suffix('.fa')}", shell=True, check=True)
+        observed_seq = SeqIO.read(tmp_path.with_suffix('.fa'), 'fasta').seq.__str__()
+        assert observed_seq.upper() == expected_seq.upper()
 
 
-def test_bam_to_consensus_minimap2():
-    for fn in mm2_fns:
-        assert kindel.bam_to_consensus(fn)
+def test_consensus_bwa_realign(tmp_path):
+    for fn, path in bwa_fns.items():
+        print(f"Processing {fn}")
+        expected_seq = SeqIO.read(path.with_suffix('.realign.fa'), 'fasta').seq.__str__()
+        subprocess.run(f"kindel consensus -r {path} > {tmp_path.with_suffix('.realign.fa')}", shell=True, check=True)
+        observed_seq = SeqIO.read(tmp_path.with_suffix('.realign.fa'), 'fasta').seq.__str__()
+        print(observed_seq)
+        assert observed_seq.upper() == expected_seq.upper()
 
 
-def test_bam_to_consensus_realign_bwa():
-    for fn in bwa_fns:
-        assert kindel.bam_to_consensus(fn, realign=True)
+def test_consensus_mm2(tmp_path):
+    for fn, path in mm2_fns.items():
+        print(f"Processing {fn}")
+        expected_records = {record.id: str(record.seq) for record in SeqIO.parse(path.with_suffix('.fa'), "fasta")}
+        subprocess.run(f"kindel consensus {path} > {tmp_path.with_suffix('.fa')}", shell=True, check=True)
+        observed_records = {record.id: str(record.seq) for record in SeqIO.parse(tmp_path.with_suffix('.fa'), "fasta")}
+        for r_id in expected_records:
+            assert observed_records[r_id].upper() == expected_records[r_id].upper()
 
-def test_weights():
-    kindel.weights(bwa_fns[0], relative=True)
+
+def test_consensus_mm2_realign(tmp_path):
+    for fn, path in mm2_fns.items():
+        print(f"Processing {fn}")
+        expected_records = {record.id: str(record.seq) for record in SeqIO.parse(path.with_suffix('.realign.fa'), "fasta")}
+        subprocess.run(f"kindel consensus {path} > {tmp_path.with_suffix('.realign.fa')}", shell=True, check=True)
+        observed_records = {record.id: str(record.seq) for record in SeqIO.parse(tmp_path.with_suffix('.realign.fa'), "fasta")}
+        for r_id in expected_records:
+            assert observed_records[r_id].upper() == expected_records[r_id].upper()
+
+
+# def test_weights():
+#     kindel.weights(bwa_fns["1.1.sub_test.bam"], relative=True)

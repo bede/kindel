@@ -6,7 +6,7 @@
 
 
 
-Kindel reconciles substitutions and CIGAR-described indels to to produce a majority vote consensus from a SAM or BAM file. Kindel can optionally further recover consensus across unaligned regions (such as those frequently seen in RNA virus populations) using soft-clipped sequence information – with **`--realign`**, Kindel identifies regions of the reference that are clip-dominant and attempts to assemble a patched consensus using unaligned sequence context. Primarily intended for use with small virus genomes, and tested with BAMs created by aligners BWA and Minimap2. If your encounter problems, please open an issue. Please also cite the [JOSS article](http://joss.theoj.org/papers/117efd1fc35bb2011311f73d3fa0b545) if you find this useful.
+Kindel reconciles substitutions and CIGAR-described indels to to produce a majority consensus from a SAM/BAM file. Using the `--realign` option, Kindel can optionally recover consensus across short alignment gaps using soft-clipped sequence information. Where Kindel finds 'clip-dominant' regions of an alignment, in realignment mode it attempts to reassemble the consensus sequence using unaligned sequence context. Primarily intended for use with small alignments of e.g. virus genomes, it has been tested with BAMs created by aligners BWA and Minimap2. If you encounter problems, please open an issue. Please also cite the [JOSS article](http://joss.theoj.org/papers/117efd1fc35bb2011311f73d3fa0b545) if you find this useful.
 
 
 
@@ -33,10 +33,9 @@ Kindel reconciles substitutions and CIGAR-described indels to to produce a major
 
 ## Limitations
 
-- Slow (10-20k records/s), & will probably explode with bacterial genomes
+- Intended for use with small alignments of e.g. virus genomes. Expect slow performance with megabase genomes.
 - SAM/BAM files must contain an SQ header line with reference sequence(s) length
-- Able to close gaps of up to 2x read length given adequate depth of coverage
-- May require multiple runs to converge on a consensus
+- Realignment mode (`--realign`) is able to close gaps of up to 2x read length given ample depth of coverage
 
 
 
