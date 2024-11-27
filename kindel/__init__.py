@@ -1,1 +1,3 @@
-__version__ = '0.4.4'
+"""Indel-aware consensus from aligned BAMs"""
+
+__version__ = "1.0.0"

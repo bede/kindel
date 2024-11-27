@@ -41,11 +41,23 @@ Kindel reconciles substitutions and CIGAR-described indels to to produce a major
 
 ## Installation
 
-```python
-# Requires Python 3.6+
+```shell
+# Requires Python 3.9+ and Samtools
 pip install kindel
 ```
-Dependencies should automatically installed, except for Samtools which is needed for BAM input.
+For a complete installation using a conda-compatible package manager:
+
+```
+conda create -y -n kindel python=3.13 samtools
+conda activate kindel
+pip install kindel
+```
+
+For a local development install:
+
+```
+pip install --editable '.[dev]'  # pip install kindel '.[dev]'
+```
 
 
 
