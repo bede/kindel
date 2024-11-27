@@ -20,11 +20,17 @@ Kindel reconciles substitutions and CIGAR-described indels to to produce a major
 
 ## Features
 
-- Consensus of aligned substititutions, insertions and deletions
-- Gap closure (`--realign`) using overlapping soft-clipped alignment context
-- Tested with Illumina alignments from BWA, Minimap2 and Segemehl 
+- Consensus of aligned substititutions, small insertions and deletions
+
+- Optional consensus reassembly around large 'clip-dominant' alignment gaps (using `--realign`) using overlapping soft-clipped alignment context
+
+- Support for short, paired and long reads mapped with Minimap2, BWA-MEM, and Segemehl
+
 - Support for BAMs with multiple reference contigs, chromosomes
-- Crude frequency-based variant calling with `kindel variants` (no VCF output)
+
+- Visualisation of aligned and clipped sequence depth by site alongside insertions, deletions (`kindel plot`)
+
+  
 
 
 
@@ -60,7 +66,7 @@ pip install --editable '.[dev]'
 
 
 
-## Usage
+## Usage (`kindel consensus`)
 
 Also see [`usage.ipynb`](usage.ipynb)
 
@@ -164,6 +170,20 @@ kindel.bam_to_consensus(bam_path, realign=False, min_depth=2, min_overlap=7,
 
 Please let me know if you run into problems by opening a GitHub issue, tweeting [@beconstant](https://twitter.com/beconstant) or mailing me via `b at bede dawt im`. Ideally send me your BAM, or a subsample of it!
 
+
+
+## Visualising alignments (`kindel plot`)
+
+It is useful to visualise rates of insertion, deletion and alignment clipping. `kindel plot` generates an interactive HTML plot of relevant alignment information.
+
+```
+kindel plot tests/data_minimap2/2.issue23.debug.bam
+```
+**Original alignment**
+![Plot of original alignment](plot-before.png)
+
+**After alignment to Kindel consensus sequence**
+![Plot after alignment to Kindel consensus sequence](plot-after.png)
 
 
 ## Contributing
