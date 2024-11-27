@@ -19,6 +19,7 @@ jobs:
           conda-channels: conda-forge, bioconda
       - name: Install
         run: |
+          conda install -y samtools
           pip install '.[dev]'
       - name: Test
         run: |
