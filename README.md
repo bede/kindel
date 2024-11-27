@@ -1,9 +1,6 @@
 # Kindel: indel-aware consensus from aligned BAM
 
-[![JOSS status](http://joss.theoj.org/papers/117efd1fc35bb2011311f73d3fa0b545/status.svg)](http://joss.theoj.org/papers/117efd1fc35bb2011311f73d3fa0b545)  
-[![PyPI version](https://badge.fury.io/py/kindel.svg)](https://badge.fury.io/py/kindel)  
-[![Build Status](https://travis-ci.org/bede/kindel.svg?branch=master)](https://travis-ci.org/bede/kindel)  
-
+[![JOSS status](http://joss.theoj.org/papers/117efd1fc35bb2011311f73d3fa0b545/status.svg)](http://joss.theoj.org/papers/117efd1fc35bb2011311f73d3fa0b545) [![PyPI version](https://img.shields.io/pypi/v/kindel)](https://pypi.org/project/kindel/) [![Python support](https://img.shields.io/badge/python-3.8%20|%203.13-blue)]() [![Tests](https://github.com/bede/kindel/actions/workflows/test.yml/badge.svg)](https://github.com/bede/kindel/actions/workflows/test.yml)
 
 
 Kindel reconciles substitutions and CIGAR-described indels to to produce a majority consensus from a SAM/BAM file. Using the `--realign` option, Kindel can optionally recover consensus across short alignment gaps using soft-clipped sequence information. Where Kindel finds 'clip-dominant' regions of an alignment, in realignment mode it attempts to reassemble the consensus sequence using unaligned sequence context. Primarily intended for use with small alignments of e.g. virus genomes, it has been tested with BAMs created by aligners BWA and Minimap2. If you encounter problems, please open an issue. Please also cite the [JOSS article](http://joss.theoj.org/papers/117efd1fc35bb2011311f73d3fa0b545) if you find this useful.
@@ -34,15 +31,15 @@ Kindel reconciles substitutions and CIGAR-described indels to to produce a major
 ## Limitations
 
 - Intended for use with small alignments of e.g. virus genomes. Expect slow performance with megabase genomes.
-- SAM/BAM files must contain an SQ header line with reference sequence(s) length
-- Realignment mode (`--realign`) is able to close gaps of up to 2x read length given ample depth of coverage
+- SAM/BAM files must contain an SQ header line with reference sequence(s) length.
+- Realignment mode (`--realign`) is able to close gaps of up to 2x read length given ample depth of coverage.
 
 
 
 ## Installation
 
 ```shell
-# Requires Python 3.9+ and Samtools
+# Requires Python 3.8+ and Samtools
 pip install kindel
 ```
 For a complete installation using a conda-compatible package manager:
@@ -173,6 +170,6 @@ If you would like to contribute to this project, please open an issue or contact
 
 Before opening a pull request, please:
 
-- Ensure tests pass by executing `pytest` inside the package directory  (requires `pytest` package)
-- Increment the version number inside `__init__.py` according to [SemVer](http://semver.org/)
-- Update documentation and/or tests if possible
+- Ensure tests pass in a local development build (see installation instructions) by executing `pytest` inside the package directory.
+- Increment the version number inside `__init__.py` according to [SemVer](http://semver.org/).
+- Update documentation and/or tests if possible.
