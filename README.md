@@ -31,7 +31,7 @@ Kindel reconciles substitutions and CIGAR-described indels to to produce a major
 ## Limitations
 
 - Intended for use with small alignments of e.g. virus genomes. Expect slow performance with megabase genomes.
-- SAM/BAM files must contain an SQ header line with reference sequence(s) length.
+- SAM/BAM files must contain an SQ header line with reference sequence length(s).
 - Realignment mode (`--realign`) is able to close gaps of up to 2x read length given ample depth of coverage.
 
 
@@ -53,7 +53,9 @@ pip install kindel
 For a local development install:
 
 ```
-pip install --editable '.[dev]'  # pip install kindel '.[dev]'
+git clone https://github.com/bede/kindel.git
+cd kindel
+pip install --editable '.[dev]'
 ```
 
 
