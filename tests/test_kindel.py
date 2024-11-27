@@ -42,6 +42,10 @@ def test_merge_by_lcs():
     assert kindel.merge_by_lcs(*short, min_overlap=7) == None
 
 
+def test_version():
+    subprocess.run(f"kindel version", shell=True, check=True)
+
+
 # FUNCTIONAL
 
 def test_parse_bam():
@@ -97,5 +101,12 @@ def test_consensus_mm2_realign(tmp_path):
             assert observed_records[r_id].upper() == expected_records[r_id].upper()
 
 
-# def test_weights():
-#     kindel.weights(bwa_fns["1.1.sub_test.bam"], relative=True)
+def test_plot():
+    subprocess.run(f"kindel plot {bwa_fns['1.1.sub_test.bam']}", shell=True, check=True)
+    plot_file = Path("1.1.sub_test.plot.html")
+    if plot_file.exists():
+        plot_file.unlink()
+
+
+def test_weights():
+    kindel.weights(bwa_fns["1.1.sub_test.bam"], relative=True)

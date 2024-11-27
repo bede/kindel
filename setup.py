@@ -37,5 +37,6 @@ setup(name='kindel',
                         'pandas>=0.19.2',
                         'biopython>=1.68',
                         'simplesam>=0.0.4'],
+      dev_requires=['pytest', 'pre-commit', 'pytest-cov', 'plotly'],
       extras_require={'plots': ['plotly>=2.0.0']},
       entry_points = {'console_scripts':['kindel=kindel.cli:main']})

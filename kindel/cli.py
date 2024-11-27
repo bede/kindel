@@ -5,6 +5,8 @@ from Bio import SeqIO
 
 from kindel import kindel
 
+from kindel import __version__
+
 
 def consensus(bam_path: 'path to SAM/BAM file',
               realign: 'attempt to reconstruct reference around soft-clip boundaries'=False,
@@ -56,13 +58,19 @@ def plot(bam_path: 'path to SAM/BAM file'):
     return kindel.plotly_clips(bam_path)
 
 
+def version():
+    '''Show version'''
+    return  f"kindel {__version__}"
+
+
 def main():
     parser = argh.ArghParser()
     parser.add_commands([consensus,
                          weights,
                          features,
                          variants,
-                         plot])
+                         plot,
+                         version])
     parser.dispatch()
 
 

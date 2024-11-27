@@ -85,7 +85,7 @@ $ kindel -h
 usage: kindel [-h] {consensus,weights,features,variants,plot} ...
 
 positional arguments:
-  {consensus,weights,features,variants,plot}
+  {consensus,weights,features,variants,plot,version}
     consensus           Infer consensus sequence(s) from alignment in SAM/BAM
                         format
     weights             Returns table of per-site nucleotide frequencies and
@@ -96,6 +96,7 @@ positional arguments:
                         relative frequency thresholds
     plot                Plot sitewise soft clipping frequency across reference
                         and genome
+    version             Show version
 
 optional arguments:
   -h, --help            show this help message and exit
