@@ -44,11 +44,13 @@ Kindel reconciles substitutions and CIGAR-described indels to to produce a major
 
 ## Installation
 
+Install inside existing Python environment:
+
 ```shell
 # Requires Python 3.8+ and Samtools
 pip install kindel
 ```
-For a complete installation using a conda-compatible package manager:
+Complete installation using a conda-compatible package manager:
 
 ```
 conda create -y -n kindel python=3.13 samtools
@@ -56,7 +58,7 @@ conda activate kindel
 pip install kindel
 ```
 
-For a local development install:
+Development install:
 
 ```
 git clone https://github.com/bede/kindel.git
@@ -74,28 +76,20 @@ Also see [`usage.ipynb`](usage.ipynb)
 
 ### Command line
 
+Generate a consensus sequence from an aligned BAM, saving the consensus sequence to `cns.fa`:
+
 ```bash
 $ kindel consensus alignment.bam > cns.fa
 ```
-Generate a consensus sequence from an aligned BAM, saving the consensus sequence to `cns.fa`
 
 
+Generate a consensus sequence from an aligned BAM with realignment mode enabled, allowing closure of gaps in the consensus sequence:
 
 ```bash
 $ kindel consensus --realign alignment.bam > cns.fa
 ```
 
-Generate a consensus sequence from an aligned BAM with realignment mode enabled, allowing closure of small gaps in the consensus sequence
-
-
-
-```bash
-$ kindel plot alignment.bam
-```
-
-Generate an interactive plot showing aligned depth alongside insertion, deletion and soft clipping frequency across the genome
-
-
+Built in help:
 
 ```bash
 $ kindel -h
@@ -119,7 +113,7 @@ optional arguments:
   -h, --help            show this help message and exit
 
 ```
----
+
 ```bash
 $  kindel consensus -h
 usage: kindel consensus [-h] [-r] [--min-depth MIN_DEPTH]
@@ -174,16 +168,21 @@ Please let me know if you run into problems by opening a GitHub issue, tweeting 
 
 ## Visualising alignments (`kindel plot`)
 
-It is useful to visualise rates of insertion, deletion and alignment clipping. `kindel plot` generates an interactive HTML plot of relevant alignment information.
+It can be useful to visualise rates of insertion, deletion and alignment clipping across an alignment. `kindel plot` generates an interactive HTML plot showing relevant alignment information.
+
+To plot aligned depth alongside insertion, deletion and soft clipping frequency:
 
 ```
 kindel plot tests/data_minimap2/2.issue23.debug.bam
 ```
+
+
 **Original alignment**
 ![Plot of original alignment](plot-before.png)
 
 **After alignment to Kindel consensus sequence**
 ![Plot after alignment to Kindel consensus sequence](plot-after.png)
+
 
 
 ## Contributing
