@@ -36,10 +36,11 @@ def consensus(
 def weights(
     bam_path: "path to SAM/BAM file",
     relative: "output relative nucleotide frequencies" = False,
-    no_confidence: "skip confidence calculation" = False,
+    confidence: "calculate confidence interval for consensus" = True,
+    confidence_alpha: "confidence interval alpha value" = 0.01,
 ):
     """Returns table of per-site nucleotide frequencies and coverage"""
-    weights_df = kindel.weights(bam_path, relative, no_confidence)
+    weights_df = kindel.weights(bam_path, relative, confidence, confidence_alpha)
     weights_df.to_csv(sys.stdout, sep="\t", index=False)
 
 
@@ -47,20 +48,6 @@ def features(bam_path: "path to SAM/BAM file"):
     """Returns table of per-site nucleotide frequencies and coverage including indels"""
     weights_df = kindel.features(bam_path)
     weights_df.to_csv(sys.stdout, sep="\t", index=False)
-
-
-def variants(
-    bam_path: "path to SAM/BAM file",
-    abs_threshold: "absolute frequency (0-∞) threshold above which to call variants" = 1,
-    rel_threshold: "relative frequency (0.0-1.0) threshold above which to call variants" = 0.01,
-    only_variants: "exclude invariant sites from output" = False,
-    absolute: "report absolute variant frequencies" = False,
-):
-    """Output variants exceeding specified absolute and relative frequency thresholds"""
-    variants_df = kindel.variants(
-        bam_path, abs_threshold, rel_threshold, only_variants, absolute
-    )
-    variants_df.to_csv(sys.stdout, sep="\t", index=False, na_rep=0)
 
 
 def plot(bam_path: "path to SAM/BAM file"):
@@ -75,7 +62,7 @@ def version():
 
 def main():
     parser = argh.ArghParser()
-    parser.add_commands([consensus, weights, features, variants, plot, version])
+    parser.add_commands([consensus, weights, features, plot, version])
     parser.dispatch()
 
 

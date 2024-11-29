@@ -602,11 +602,12 @@ def bam_to_consensus(
 def weights(
     bam_path: "path to SAM/BAM file",
     relative: "output relative nucleotide frequencies" = False,
-    no_confidence: "skip confidence calculation" = False,
+    confidence: "calculate confidence interval" = True,
+    confidence_alpha: "confidence interval alpha" = 0.01,
 ):
     """
-    Returns DataFrame of per-site nucleotide frequencies, depth, consensus, lower bound of the
-    99% consensus confidence interval, and Shannon entropy
+    Returns DataFrame of per-site nucleotide frequencies, depth, consensus, clip start
+    clip end, consensus, confidence intervals, and entropy
     """
 
     def binomial_ci(count, nobs, alpha=0.01):
@@ -618,30 +619,50 @@ def weights(
 
     refs_alns = parse_bam(bam_path)
     weights_fmt = []
-    for ref, aln in refs_alns.items():
-        weights_fmt.extend(
-            [dict(w, ref=ref, pos=i) for i, w in enumerate(aln.weights, start=1)]
-        )
+    for chrom, aln in refs_alns.items():
+        for i, w in enumerate(aln.weights, start=1):
+            weight_dict = dict(w, chrom=chrom, pos=i)
+            weight_dict["insertions"] = sum(aln.insertions[i - 1].values())
+            weight_dict["deletions"] = aln.deletions[i - 1]
+            weight_dict["clip_starts"] = aln.clip_starts[i - 1]
+            weight_dict["clip_ends"] = aln.clip_ends[i - 1]
+            weights_fmt.append(weight_dict)
 
     weights_df = pd.DataFrame(
-        weights_fmt, columns=["ref", "pos", "A", "C", "G", "T", "N"]
+        weights_fmt,
+        columns=[
+            "chrom",
+            "pos",
+            "A",
+            "C",
+            "G",
+            "T",
+            "N",
+            "insertions",
+            "deletions",
+            "clip_starts",
+            "clip_ends",
+        ],
     )
-    weights_df["depth"] = weights_df[["A", "C", "G", "T", "N"]].sum(axis=1)
-    consensus_depths_df = weights_df[["A", "C", "G", "T", "N"]].max(axis=1)
+    weights_df["depth"] = weights_df[["A", "C", "G", "T", "N", "deletions"]].sum(axis=1)
+    consensus_depths_df = weights_df[["A", "C", "G", "T", "N", "deletions"]].max(axis=1)
     weights_df["consensus"] = consensus_depths_df.divide(weights_df.depth)
 
     rel_weights_df = pd.DataFrame()
-    for nt in ["A", "C", "G", "T", "N"]:
+    for nt in ["A", "C", "G", "T", "N", "deletions"]:
         rel_weights_df[[nt]] = weights_df[[nt]].divide(weights_df.depth, axis=0)
-        rel_weights_df = rel_weights_df.round(dict(A=3, C=3, G=3, T=3, N=3))
+        rel_weights_df = rel_weights_df.round(
+            {"A": 4, "C": 4, "G": 4, "T": 4, "N": 4, "deletions": 4}
+        )
 
     weights_df["shannon"] = [
         scipy.stats.entropy(x) for x in rel_weights_df[["A", "C", "G", "T"]].values
     ]
 
-    if not no_confidence:
+    if confidence:
         conf_ints = [
-            binomial_ci(c, t) for c, t in zip(consensus_depths_df, weights_df["depth"])
+            binomial_ci(c, t, confidence_alpha)
+            for c, t in zip(consensus_depths_df, weights_df["depth"])
         ]
         weights_df["lower_ci"] = [ci[0] for ci in conf_ints]
         weights_df["upper_ci"] = [ci[1] for ci in conf_ints]
@@ -655,13 +676,14 @@ def weights(
 
 def features(bam_path: "path to SAM/BAM file"):
     """
-    Returns DataFrame of relative per-site nucleotide frequencies, insertions, deletions and entropy
+    Returns DataFrame of relative per-site nucleotide frequencies, insertions, deletions
+    and entropy
     """
     refs_alns = parse_bam(bam_path)
     weights_fmt = []
     for ref, aln in refs_alns.items():
         weights_fmt.extend(
-            [dict(w, ref=ref, pos=i) for i, w in enumerate(aln.weights, start=1)]
+            [dict(w, chrom=ref, pos=i) for i, w in enumerate(aln.weights, start=1)]
         )
     for pos, weight in enumerate(weights_fmt):
         weight["i"] = sum(aln.insertions[pos].values())
@@ -669,7 +691,7 @@ def features(bam_path: "path to SAM/BAM file"):
 
     # Think about which columns should sum to 1
     weights_df = pd.DataFrame(
-        weights_fmt, columns=["ref", "pos", "A", "C", "G", "T", "N", "i", "d"]
+        weights_fmt, columns=["chrom", "pos", "A", "C", "G", "T", "N", "i", "d"]
     )
     weights_df["depth"] = weights_df[["A", "C", "G", "T", "N", "d"]].sum(axis=1)
     consensus_depths_df = weights_df[["A", "C", "G", "T", "N"]].max(axis=1)
@@ -680,7 +702,7 @@ def features(bam_path: "path to SAM/BAM file"):
 
     weights_df["shannon"] = [
         scipy.stats.entropy(x)
-        for x in weights_df[["A", "C", "G", "T", "i", "d"]].as_matrix()
+        for x in weights_df[["A", "C", "G", "T", "i", "d"]].values
     ]
 
     return weights_df.round(3)

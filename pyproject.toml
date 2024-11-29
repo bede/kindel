@@ -21,7 +21,6 @@ dependencies = [
 urls = { "Homepage" = "https://github.com/bede/kindel" }
 classifiers = [
     "Environment :: Console",
-    "Environment :: MacOS X",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
     "Natural Language :: English",

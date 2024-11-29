@@ -158,4 +158,12 @@ def test_plot():
 
 
 def test_weights():
+    kindel.weights(bwa_fns["1.1.sub_test.bam"])
+
+
+def test_weights_relative():
     kindel.weights(bwa_fns["1.1.sub_test.bam"], relative=True)
+
+
+def test_features():
+    kindel.features(bwa_fns["1.1.sub_test.bam"])
