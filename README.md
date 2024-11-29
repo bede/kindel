@@ -162,7 +162,7 @@ kindel.bam_to_consensus(bam_path, realign=False, min_depth=2, min_overlap=7,
 
 ## Issues
 
-Please let me know if you run into problems by opening a GitHub issue, tweeting [@beconstant](https://twitter.com/beconstant) or mailing me via `b at bede dawt im`. Ideally send me your BAM, or a subsample of it!
+If you encounter problems please open a GitHub issue, preferably including a BAM that allows the problem to be reproduced, or else reach out via email or social media.
 
 
 
