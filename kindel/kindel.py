@@ -177,7 +177,7 @@ def cdr_start_consensuses(
         pos,
         csd,
         w,
-        dp,
+        d,
     ) in zip(positions, clip_start_depth, weights, deletions):
         cdr_positions = []
         for r in regions:
@@ -185,13 +185,13 @@ def cdr_start_consensuses(
             for s in range_list:
                 cdr_positions.append(s)
         if (
-            csd / (sum(w.values()) + dp + 1) > 0.5
+            csd / (sum(w.values()) + d + 1) > 0.5
             and pos not in masked_positions + cdr_positions
         ):
             logging.debug("Starting extension")
             start_pos = pos
             clip_consensus = ""
-            for pos_, (csd_, sw_, w_, dd_) in enumerate(
+            for pos_, (csd_, csw_, w_, d_) in enumerate(
                 zip(
                     clip_start_depth[pos:],
                     clip_start_weights[pos:],
@@ -200,10 +200,10 @@ def cdr_start_consensuses(
                 )
             ):
                 logging.debug(
-                    f"start_pos: {start_pos}, pos: {pos_}, csd: {csd_}, sum (weights): {sum(w_.values())}, sum (deletions): {dd_}"
+                    f"start_pos: {start_pos}, pos: {pos_}, csd: {csd_}, sum (weights): {sum(w_.values())}, sum (deletions): {d_}"
                 )
-                if csd_ > sum(w_.values(), dd_) * clip_decay_threshold:
-                    clip_consensus += consensus(sw_)[0]
+                if csd_ > sum(w_.values(), d_) * clip_decay_threshold:
+                    clip_consensus += consensus(csw_)[0]
                 else:
                     end_pos = start_pos + pos_
                     logging.debug("Stopping extension")
@@ -249,11 +249,11 @@ def cdr_end_consensuses(
             logging.debug("Starting extension")
             end_pos = pos + 1  # Start with end since we're iterating in reverse
             rev_clip_consensus = None
-            for pos_, ced_, cew_, w_, dd_ in reversed_weights[len(positions) - pos :]:
+            for pos_, ced_, cew_, w_, d_ in reversed_weights[len(positions) - pos :]:
                 logging.debug(
-                    f"end_pos: {end_pos}, pos: {pos_}, ced: {ced_}, sum (weights): {sum(w_.values())}, sum (deletions): {dd_}"
+                    f"end_pos: {end_pos}, pos: {pos_}, ced: {ced_}, sum (weights): {sum(w_.values())}, sum (deletions): {d_}"
                 )
-                if ced_ > sum(w_.values(), dd_) * clip_decay_threshold:
+                if ced_ > sum(w_.values(), d_) * clip_decay_threshold:
                     if (
                         not rev_clip_consensus
                     ):  # Add first base to account for lag in clip coverage
