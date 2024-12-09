@@ -13,7 +13,7 @@ import pandas as pd
 
 from . import cli
 
-# logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.DEBUG)
 
 Region = namedtuple("Region", ["start", "end", "seq", "direction"])
 
@@ -199,15 +199,16 @@ def cdr_start_consensuses(
                     deletions[pos:],
                 )
             ):
+                end_pos = start_pos + pos_
                 logging.debug(
-                    f"start_pos: {start_pos}, pos: {pos_}, csd: {csd_}, sum (weights): {sum(w_.values())}, sum (deletions): {d_}"
+                    f"pos: {start_pos + pos_}, csd: {csd_}, sum (weights): {sum(w_.values())}, sum (deletions): {d_}"
                 )
                 if csd_ > sum(w_.values(), d_) * clip_decay_threshold:
                     clip_consensus += consensus(csw_)[0]
                 else:
-                    end_pos = start_pos + pos_
                     logging.debug("Stopping extension")
                     break
+                logging.debug(f"pos: {pos_}, consensus(csw): {consensus(csw_)[0]}")
             regions.append(Region(start_pos, end_pos, clip_consensus, "→"))
 
     for region in regions:
@@ -250,6 +251,7 @@ def cdr_end_consensuses(
             end_pos = pos + 1  # Start with end since we're iterating in reverse
             rev_clip_consensus = None
             for pos_, ced_, cew_, w_, d_ in reversed_weights[len(positions) - pos :]:
+                start_pos = pos_
                 logging.debug(
                     f"end_pos: {end_pos}, pos: {pos_}, ced: {ced_}, sum (weights): {sum(w_.values())}, sum (deletions): {d_}"
                 )
@@ -260,7 +262,6 @@ def cdr_end_consensuses(
                         rev_clip_consensus = consensus(clip_end_weights[pos_ + 1])[0]
                     rev_clip_consensus += consensus(cew_)[0]
                 else:
-                    start_pos = pos_
                     clip_consensus = rev_clip_consensus[::-1]
                     logging.debug("Stopping extension")
                     break

@@ -7,10 +7,13 @@ from kindel import kindel
 bwa_path = Path("tests/data_bwa_mem")
 seg_path = Path("tests/data_segemehl")
 mm2_path = Path("tests/data_minimap2")
+ext_path = Path("tests/data_ext")
+
 
 bwa_fns = {fn.name: fn for fn in bwa_path.iterdir() if fn.suffix == ".bam"}
 seg_fns = {fn.name: fn for fn in seg_path.iterdir() if fn.suffix == ".bam"}
 mm2_fns = {fn.name: fn for fn in mm2_path.iterdir() if fn.suffix == ".bam"}
+ext_fns = {fn.name: fn for fn in ext_path.iterdir() if fn.suffix == ".bam"}
 
 test_aln = list(kindel.parse_bam(bwa_path / "1.1.sub_test.bam").values())[0]
 
@@ -132,6 +135,44 @@ def test_consensus_mm2(tmp_path):
 
 def test_consensus_mm2_realign(tmp_path):
     for fn, path in mm2_fns.items():
+        print(f"Processing {fn}")
+        with dnaio.open(path.with_suffix(".realign.fa"), mode="r") as reader:
+            expected_records = {
+                record.name: record.sequence for record in iter(reader)
+            }  # Convert reader to iterator
+        subprocess.run(
+            f"kindel consensus {path} > {tmp_path / fn}.realign.fa",
+            shell=True,
+            check=True,
+        )
+        with dnaio.open(tmp_path / f"{fn}.realign.fa", mode="r") as reader:
+            observed_records = {
+                record.name: record.sequence for record in iter(reader)
+            }  # Convert reader to iterator
+        for r_id in expected_records:
+            assert observed_records[r_id].upper() == expected_records[r_id].upper()
+
+
+def test_consensus_ext(tmp_path):
+    for fn, path in ext_fns.items():
+        print(f"Processing {fn}")
+        with dnaio.open(path.with_suffix(".fa"), mode="r") as reader:
+            expected_records = {
+                record.name: record.sequence for record in iter(reader)
+            }  # Convert reader to iterator
+        subprocess.run(
+            f"kindel consensus {path} > {tmp_path / fn}.fa", shell=True, check=True
+        )
+        with dnaio.open(tmp_path / f"{fn}.fa", mode="r") as reader:
+            observed_records = {
+                record.name: record.sequence for record in iter(reader)
+            }  # Convert reader to iterator
+        for r_id in expected_records:
+            assert observed_records[r_id].upper() == expected_records[r_id].upper()
+
+
+def test_consensus_ext_realign(tmp_path):
+    for fn, path in ext_fns.items():
         print(f"Processing {fn}")
         with dnaio.open(path.with_suffix(".realign.fa"), mode="r") as reader:
             expected_records = {
