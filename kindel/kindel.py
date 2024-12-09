@@ -148,10 +148,6 @@ def parse_bam(bam_path):
         if "*" in refs_records:
             del refs_records["*"]
 
-    # assert len(refs_records) <= 1, 'Detected primary mappings to more than one reference'
-    # Use samtools view to extract single contig primary mappings
-    # Otherwise would make a useful enhancement
-
     for ref_id, records in refs_records.items():
         alignments[ref_id] = parse_records(ref_id, refs_lens[ref_id], records)
 
@@ -201,14 +197,15 @@ def cdr_start_consensuses(
             ):
                 end_pos = start_pos + pos_
                 logging.debug(
-                    f"pos: {start_pos + pos_}, csd: {csd_}, sum (weights): {sum(w_.values())}, csw: {csw_}, sum (deletions): {d_}"
+                    f"{start_pos + pos_} {consensus(csw_)[0]}, csd: {csd_}, sum(w): {sum(w_.values())}, sum(d): {d_}, csw: {csw_}"
                 )
                 if csd_ > sum(w_.values(), d_) * clip_decay_threshold:
                     clip_consensus += consensus(csw_)[0]
                 else:
-                    logging.debug("Stopping extension")
+                    logging.debug(
+                        f"Stopping extension ({csd_} > {sum(w_.values(), d_) * clip_decay_threshold} is False)"
+                    )
                     break
-                logging.debug(f"pos: {pos_}, consensus(csw): {consensus(csw_)[0]}")
             regions.append(Region(start_pos, end_pos, clip_consensus, "→"))
 
     for region in regions:
@@ -238,13 +235,13 @@ def cdr_end_consensuses(
     )
     regions = []
     logging.debug("cdr_end_consensuses()")
-    for pos, ced, _, w, dp in reversed_weights:
+    for pos, ced, _, w, d in reversed_weights:
         cdr_positions = []
         for r in regions:
             for s in range(r.start, r.end):
                 cdr_positions.append(s)
         if (
-            ced / (sum(w.values()) + dp + 1) > 0.5
+            ced / (sum(w.values()) + d + 1) > 0.5
             and pos not in masked_positions + cdr_positions
         ):
             logging.debug("Starting extension")
@@ -253,7 +250,7 @@ def cdr_end_consensuses(
             for pos_, ced_, cew_, w_, d_ in reversed_weights[len(positions) - pos :]:
                 start_pos = pos_
                 logging.debug(
-                    f"end_pos: {end_pos}, pos: {pos_}, ced: {ced_}, sum (weights): {sum(w_.values())}, cew: {cew_}, sum (deletions): {d_}"
+                    f"{start_pos + pos_} {consensus(cew_)[0]}, ced: {ced_}, sum(w): {sum(w_.values())}, sum(d): {d_}, cew: {cew_}"
                 )
                 if ced_ > sum(w_.values(), d_) * clip_decay_threshold:
                     if (
@@ -263,9 +260,10 @@ def cdr_end_consensuses(
                     rev_clip_consensus += consensus(cew_)[0]
                 else:
                     clip_consensus = rev_clip_consensus[::-1]
-                    logging.debug("Stopping extension")
+                    logging.debug(
+                        f"Stopping extension ({ced_} > {sum(w_.values(), d_) * clip_decay_threshold} is False)"
+                    )
                     break
-                logging.debug(f"pos: {pos_}, consensus(cew): {consensus(cew_)[0]}")
             regions.append(Region(start_pos, end_pos, clip_consensus, "←"))
 
     for region in regions:
@@ -545,7 +543,7 @@ def bam_to_consensus(
     bam_path,
     realign=False,
     min_depth=1,
-    min_overlap=7,
+    min_overlap=9,
     clip_decay_threshold=0.1,
     mask_ends=50,
     trim_ends=False,
