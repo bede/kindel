@@ -246,11 +246,11 @@ def cdr_end_consensuses(
         ):
             logging.debug("Starting extension")
             end_pos = pos + 1  # Start with end since we're iterating in reverse
-            rev_clip_consensus = None
+            rev_clip_consensus = ""
             for pos_, ced_, cew_, w_, d_ in reversed_weights[len(positions) - pos :]:
                 start_pos = pos_
                 logging.debug(
-                    f"{start_pos + pos_} {consensus(cew_)[0]}, ced: {ced_}, sum(w): {sum(w_.values())}, sum(d): {d_}, cew: {cew_}"
+                    f"{pos_} {consensus(cew_)[0]}, ced: {ced_}, sum(w): {sum(w_.values())}, sum(d): {d_}, cew: {cew_}"
                 )
                 if ced_ > sum(w_.values(), d_) * clip_decay_threshold:
                     if (
@@ -345,6 +345,7 @@ def merge_by_lcs(s1, s2, min_overlap):
 
 def merge_cdrps(cdrps, min_overlap):
     """Returns merged clip-dominant region pairs as Region instances"""
+    logging.debug("merge_cdrps()")
     merged_cdrps = []
     for cdrp in cdrps:
         fwd_cdr, rev_cdr = cdrp
@@ -353,11 +354,10 @@ def merge_cdrps(cdrps, min_overlap):
         )  # Fails as None
         if not merged_seq:
             logging.warning(
-                f"No overlap found for CDRP spanning positions {fwd_cdr.start}-{rev_cdr.end} (min_overlap = {min_overlap})"
+                f"No overlap found for clip dominant region spanning positions {fwd_cdr.start}-{rev_cdr.end} (min_overlap = {min_overlap})"
             )
         merged_cdrps.append(Region(fwd_cdr.start, rev_cdr.end, merged_seq, None))
 
-    logging.debug("Merged CDRPs")
     logging.debug(merged_cdrps)
     return merged_cdrps
 
@@ -568,7 +568,17 @@ def bam_to_consensus(
 
         else:
             cdr_patches = None
-        # logging.debug(aln.weights, aln.clip_start_weights, aln.clip_end_weights, aln.insertions,  aln.deletions, cdr_patches, trim_ends, min_depth, uppercase)
+        logging.debug(
+            aln.weights,
+            aln.clip_start_weights,
+            aln.clip_end_weights,
+            aln.insertions,
+            aln.deletions,
+            cdr_patches,
+            trim_ends,
+            min_depth,
+            uppercase,
+        )
         consensus, changes = consensus_sequence(
             aln.weights,
             aln.insertions,
