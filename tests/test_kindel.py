@@ -141,7 +141,7 @@ def test_consensus_mm2_realign(tmp_path):
                 record.name: record.sequence for record in iter(reader)
             }  # Convert reader to iterator
         subprocess.run(
-            f"kindel consensus {path} > {tmp_path / fn}.realign.fa",
+            f"kindel consensus -r {path} > {tmp_path / fn}.realign.fa",
             shell=True,
             check=True,
         )
@@ -179,7 +179,7 @@ def test_consensus_ext_realign(tmp_path):
                 record.name: record.sequence for record in iter(reader)
             }  # Convert reader to iterator
         subprocess.run(
-            f"kindel consensus {path} > {tmp_path / fn}.realign.fa",
+            f"kindel consensus -r {path} > {tmp_path / fn}.realign.fa",
             shell=True,
             check=True,
         )
@@ -189,6 +189,25 @@ def test_consensus_ext_realign(tmp_path):
             }  # Convert reader to iterator
         for r_id in expected_records:
             assert observed_records[r_id].upper() == expected_records[r_id].upper()
+
+
+def test_consensus_ext_realign_gp120_cdrs(tmp_path):
+    expected_subseqs = [
+        "ATCAACTCAACTGCTGTTAAATGGCAGTCTAGCAGAAGAAGAGGTAGTAATTAGAT"  # Wraps 700-1200bp
+    ]
+    prefix = "hxb2-gp120-mutated"
+    subprocess.run(
+        f"kindel consensus -r /tests/data_ext/{prefix}.sam > {tmp_path / prefix}.realign.fa",
+        shell=True,
+        check=True,
+    )
+    with dnaio.open(tmp_path / f"{prefix}.realign.fa", mode="r") as reader:
+        observed_records = {
+            record.name: record.sequence for record in iter(reader)
+        }  # Convert reader to iterator
+    for r_id in observed_records:
+        for subseq in expected_subseqs:
+            assert subseq in observed_records[r_id].upper()
 
 
 def test_plot():

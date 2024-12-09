@@ -201,7 +201,7 @@ def cdr_start_consensuses(
             ):
                 end_pos = start_pos + pos_
                 logging.debug(
-                    f"pos: {start_pos + pos_}, csd: {csd_}, sum (weights): {sum(w_.values())} {w_}, sum (deletions): {d_}"
+                    f"pos: {start_pos + pos_}, csd: {csd_}, sum (weights): {sum(w_.values())}, csw: {csw_}, sum (deletions): {d_}"
                 )
                 if csd_ > sum(w_.values(), d_) * clip_decay_threshold:
                     clip_consensus += consensus(csw_)[0]
@@ -253,7 +253,7 @@ def cdr_end_consensuses(
             for pos_, ced_, cew_, w_, d_ in reversed_weights[len(positions) - pos :]:
                 start_pos = pos_
                 logging.debug(
-                    f"end_pos: {end_pos}, pos: {pos_}, ced: {ced_}, sum (weights): {sum(w_.values())} {w_}, sum (deletions): {d_}"
+                    f"end_pos: {end_pos}, pos: {pos_}, ced: {ced_}, sum (weights): {sum(w_.values())}, cew: {cew_}, sum (deletions): {d_}"
                 )
                 if ced_ > sum(w_.values(), d_) * clip_decay_threshold:
                     if (
