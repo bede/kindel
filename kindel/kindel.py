@@ -201,7 +201,7 @@ def cdr_start_consensuses(
             ):
                 end_pos = start_pos + pos_
                 logging.debug(
-                    f"pos: {start_pos + pos_}, csd: {csd_}, sum (weights): {sum(w_.values())}, sum (deletions): {d_}"
+                    f"pos: {start_pos + pos_}, csd: {csd_}, sum (weights): {sum(w_.values())} {w_}, sum (deletions): {d_}"
                 )
                 if csd_ > sum(w_.values(), d_) * clip_decay_threshold:
                     clip_consensus += consensus(csw_)[0]
@@ -253,7 +253,7 @@ def cdr_end_consensuses(
             for pos_, ced_, cew_, w_, d_ in reversed_weights[len(positions) - pos :]:
                 start_pos = pos_
                 logging.debug(
-                    f"end_pos: {end_pos}, pos: {pos_}, ced: {ced_}, sum (weights): {sum(w_.values())}, sum (deletions): {d_}"
+                    f"end_pos: {end_pos}, pos: {pos_}, ced: {ced_}, sum (weights): {sum(w_.values())} {w_}, sum (deletions): {d_}"
                 )
                 if ced_ > sum(w_.values(), d_) * clip_decay_threshold:
                     if (
@@ -265,6 +265,7 @@ def cdr_end_consensuses(
                     clip_consensus = rev_clip_consensus[::-1]
                     logging.debug("Stopping extension")
                     break
+                logging.debug(f"pos: {pos_}, consensus(cew): {consensus(cew_)[0]}")
             regions.append(Region(start_pos, end_pos, clip_consensus, "←"))
 
     for region in regions:
@@ -378,62 +379,62 @@ def consensus(weight):
     return (base, frequency, proportion, tie)
 
 
-def s_overhang_consensus(clip_start_weights, start_pos, min_depth, max_len=1000):
-    """
-    Returns consensus sequence (string) of clipped reads at specified position
-    start_pos is the first position described by the CIGAR-S
-    """
-    consensus_overhang = ""
-    for pos in range(start_pos, start_pos + max_len):
-        pos_consensus = consensus(clip_start_weights[pos])
-        if pos_consensus[1] >= min_depth:
-            consensus_overhang += pos_consensus[0]
-        else:
-            break
+# def s_overhang_consensus(clip_start_weights, start_pos, min_depth, max_len=1000):
+#     """
+#     Returns consensus sequence (string) of clipped reads at specified position
+#     start_pos is the first position described by the CIGAR-S
+#     """
+#     consensus_overhang = ""
+#     for pos in range(start_pos, start_pos + max_len):
+#         pos_consensus = consensus(clip_start_weights[pos])
+#         if pos_consensus[1] >= min_depth:
+#             consensus_overhang += pos_consensus[0]
+#         else:
+#             break
 
-    return consensus_overhang
-
-
-def e_overhang_consensus(clip_end_weights, start_pos, min_depth, max_len=1000):
-    """
-    Returns consensus sequence (string) of clipped reads at specified position
-    end_pos is the last position described by the CIGAR-S
-    """
-    rev_consensus_overhang = ""
-    for pos in range(start_pos, start_pos - max_len, -1):
-        pos_consensus = consensus(clip_end_weights[pos])
-        if pos_consensus[1] >= min_depth:
-            rev_consensus_overhang += pos_consensus[0]
-        else:
-            break
-    consensus_overhang = rev_consensus_overhang[::-1]
-
-    return consensus_overhang
+#     return consensus_overhang
 
 
-def s_flanking_seq(start_pos, weights, min_depth, k):
-    """
-    Returns consensus sequence (string) flanking LHS of soft-clipped gaps
-    """
-    flank_seq = ""
-    for pos in range(start_pos - k, start_pos):
-        pos_consensus = consensus(weights[pos])
-        if pos_consensus[1] >= min_depth:
-            flank_seq += pos_consensus[0]
-    return flank_seq
+# def e_overhang_consensus(clip_end_weights, start_pos, min_depth, max_len=1000):
+#     """
+#     Returns consensus sequence (string) of clipped reads at specified position
+#     end_pos is the last position described by the CIGAR-S
+#     """
+#     rev_consensus_overhang = ""
+#     for pos in range(start_pos, start_pos - max_len, -1):
+#         pos_consensus = consensus(clip_end_weights[pos])
+#         if pos_consensus[1] >= min_depth:
+#             rev_consensus_overhang += pos_consensus[0]
+#         else:
+#             break
+#     consensus_overhang = rev_consensus_overhang[::-1]
+
+#     return consensus_overhang
 
 
-def e_flanking_seq(end_pos, weights, min_depth, k):
-    """
-    Returns consensus sequence (string) flanking RHS of soft-clipped gaps
-    """
-    flank_seq = ""
-    for pos in range(end_pos + 1, end_pos + k + 1):
-        pos_consensus = consensus(weights[pos])
-        if pos_consensus[1] >= min_depth:
-            flank_seq += pos_consensus[0]
+# def s_flanking_seq(start_pos, weights, min_depth, k):
+#     """
+#     Returns consensus sequence (string) flanking LHS of soft-clipped gaps
+#     """
+#     flank_seq = ""
+#     for pos in range(start_pos - k, start_pos):
+#         pos_consensus = consensus(weights[pos])
+#         if pos_consensus[1] >= min_depth:
+#             flank_seq += pos_consensus[0]
+#     return flank_seq
 
-    return flank_seq
+
+# def e_flanking_seq(end_pos, weights, min_depth, k):
+#     """
+#     Returns consensus sequence (string) flanking RHS of soft-clipped gaps
+#     """
+#     flank_seq = ""
+#     for pos in range(end_pos + 1, end_pos + k + 1):
+#         pos_consensus = consensus(weights[pos])
+#         if pos_consensus[1] >= min_depth:
+#             flank_seq += pos_consensus[0]
+
+#     return flank_seq
 
 
 def consensus_sequence(
