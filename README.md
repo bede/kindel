@@ -1,9 +1,9 @@
 # Kindel: indel-aware consensus from aligned BAM
 
-[![JOSS status](http://joss.theoj.org/papers/117efd1fc35bb2011311f73d3fa0b545/status.svg)](http://joss.theoj.org/papers/117efd1fc35bb2011311f73d3fa0b545) [![PyPI version](https://img.shields.io/pypi/v/kindel)](https://pypi.org/project/kindel/) [![Python support](https://img.shields.io/badge/python-3.8%20|%203.13-blue)]() [![Tests](https://github.com/bede/kindel/actions/workflows/test.yml/badge.svg)](https://github.com/bede/kindel/actions/workflows/test.yml)
+[![JOSS status](http://joss.theoj.org/papers/117efd1fc35bb2011311f73d3fa0b545/status.svg)](http://joss.theoj.org/papers/117efd1fc35bb2011311f73d3fa0b545) [![PyPI version](https://img.shields.io/pypi/v/kindel)](https://pypi.org/project/kindel/) [![Python support](https://img.shields.io/badge/python-3.9%20|%203.13-blue)]() [![Tests](https://github.com/bede/kindel/actions/workflows/test.yml/badge.svg)](https://github.com/bede/kindel/actions/workflows/test.yml)
 
 
-Kindel reconciles substitutions and CIGAR-described indels to to produce a majority consensus from a SAM/BAM file. Using the `--realign` option, Kindel can optionally recover consensus across short alignment gaps using soft-clipped sequence information. Where Kindel finds 'clip-dominant' regions of an alignment, in realignment mode it attempts to reassemble the consensus sequence using unaligned sequence context. Primarily intended for use with small alignments of e.g. virus genomes, it has been tested with BAMs created by aligners BWA and Minimap2. If you encounter problems, please open an issue. Please also cite the [JOSS article](http://joss.theoj.org/papers/117efd1fc35bb2011311f73d3fa0b545) if you find this useful.
+Kindel reconciles substitutions and CIGAR-described indels to to produce a majority consensus from an aligned BAM/SAM file. Using the `--realign` option, unaligned gap closure using soft-clipped sequence information is also performed, a kind of local reassembly. Intended for use with small alignments of genes or virus genomes, Kindel is tested with BAMs created by aligners such as Minimap2 and BWA. No reference sequence is required, however the input BAM must contain headers (`@SQ`) . If you encounter problems, please open an issue. Please also cite the [JOSS article](http://joss.theoj.org/papers/117efd1fc35bb2011311f73d3fa0b545) if you find this useful.
 
 
 
@@ -22,9 +22,9 @@ Kindel reconciles substitutions and CIGAR-described indels to to produce a major
 
 - Consensus of aligned substititutions, small insertions and deletions
 
-- Optional consensus reassembly around large 'clip-dominant' alignment gaps (using `--realign`) using overlapping soft-clipped alignment context
+- Optional consensus reassembly around large unaligned 'clip-dominant'  gaps (using `--realign`)
 
-- Support for short, paired and long reads mapped with Minimap2, BWA-MEM, and Segemehl
+- Support for short, paired and long reads mapped with e.g. Minimap2, BWA-MEM, and Segemehl
 
 - Support for BAMs with multiple reference contigs, chromosomes
 
@@ -36,9 +36,9 @@ Kindel reconciles substitutions and CIGAR-described indels to to produce a major
 
 ## Limitations
 
-- Intended for use with small alignments of e.g. virus genomes. Expect slow performance with megabase genomes.
-- SAM/BAM files must contain an SQ header line with reference sequence length(s).
-- Realignment mode (`--realign`) is able to close gaps of up to 2x read length given ample depth of coverage.
+- While Kindel has been tested with bacterial genomes, expect slow performance with megabase genomes
+- SAM/BAM files must contain an `@SQ` header line with reference sequence length(s).
+- Realignment mode (`--realign`) is able to close gaps of up to 2x read length
 
 
 
@@ -47,7 +47,7 @@ Kindel reconciles substitutions and CIGAR-described indels to to produce a major
 Install inside existing Python environment:
 
 ```shell
-# Requires Python 3.8+ and Samtools
+# Requires Python 3.9+ and Samtools
 pip install kindel
 ```
 Complete installation using a conda-compatible package manager:

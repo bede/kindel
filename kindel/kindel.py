@@ -13,7 +13,7 @@ import pandas as pd
 
 from . import cli
 
-logging.basicConfig(level=logging.DEBUG)
+# logging.basicConfig(level=logging.DEBUG)
 
 Region = namedtuple("Region", ["start", "end", "seq", "direction"])
 
@@ -376,64 +376,6 @@ def consensus(weight):
     return (base, frequency, proportion, tie)
 
 
-# def s_overhang_consensus(clip_start_weights, start_pos, min_depth, max_len=1000):
-#     """
-#     Returns consensus sequence (string) of clipped reads at specified position
-#     start_pos is the first position described by the CIGAR-S
-#     """
-#     consensus_overhang = ""
-#     for pos in range(start_pos, start_pos + max_len):
-#         pos_consensus = consensus(clip_start_weights[pos])
-#         if pos_consensus[1] >= min_depth:
-#             consensus_overhang += pos_consensus[0]
-#         else:
-#             break
-
-#     return consensus_overhang
-
-
-# def e_overhang_consensus(clip_end_weights, start_pos, min_depth, max_len=1000):
-#     """
-#     Returns consensus sequence (string) of clipped reads at specified position
-#     end_pos is the last position described by the CIGAR-S
-#     """
-#     rev_consensus_overhang = ""
-#     for pos in range(start_pos, start_pos - max_len, -1):
-#         pos_consensus = consensus(clip_end_weights[pos])
-#         if pos_consensus[1] >= min_depth:
-#             rev_consensus_overhang += pos_consensus[0]
-#         else:
-#             break
-#     consensus_overhang = rev_consensus_overhang[::-1]
-
-#     return consensus_overhang
-
-
-# def s_flanking_seq(start_pos, weights, min_depth, k):
-#     """
-#     Returns consensus sequence (string) flanking LHS of soft-clipped gaps
-#     """
-#     flank_seq = ""
-#     for pos in range(start_pos - k, start_pos):
-#         pos_consensus = consensus(weights[pos])
-#         if pos_consensus[1] >= min_depth:
-#             flank_seq += pos_consensus[0]
-#     return flank_seq
-
-
-# def e_flanking_seq(end_pos, weights, min_depth, k):
-#     """
-#     Returns consensus sequence (string) flanking RHS of soft-clipped gaps
-#     """
-#     flank_seq = ""
-#     for pos in range(end_pos + 1, end_pos + k + 1):
-#         pos_consensus = consensus(weights[pos])
-#         if pos_consensus[1] >= min_depth:
-#             flank_seq += pos_consensus[0]
-
-#     return flank_seq
-
-
 def consensus_sequence(
     weights, insertions, deletions, cdr_patches, trim_ends, min_depth, uppercase
 ):
@@ -509,11 +451,11 @@ def build_report(
         if cdr_patches
         else ""
     )
-    for pos, change in enumerate(changes):
+    for pos, change in enumerate(changes, start=1):
         if change == "N":
             ambiguous_sites.append(str(pos))
         elif change == "I":
-            insertion_sites.append(str(pos + 1))
+            insertion_sites.append(str(pos))
         elif change == "D":
             deletion_sites.append(str(pos))
     report = "========================= REPORT ===========================\n"
@@ -631,7 +573,7 @@ def weights(
     for chrom, aln in refs_alns.items():
         for i, w in enumerate(aln.weights, start=1):
             weight_dict = dict(w, chrom=chrom, pos=i)
-            weight_dict["insertions"] = sum(aln.insertions[i - 1].values())
+            weight_dict["insertions"] = sum(aln.insertions[i].values())
             weight_dict["deletions"] = aln.deletions[i - 1]
             weight_dict["clip_starts"] = aln.clip_starts[i - 1]
             weight_dict["clip_ends"] = aln.clip_ends[i - 1]
