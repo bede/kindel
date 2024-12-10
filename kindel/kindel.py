@@ -142,8 +142,7 @@ def parse_bam(bam_path):
 
         refs_records = defaultdict(list)
         for r in bam:
-            for id in refs_lens:
-                refs_records[r.rname].append(r)
+            refs_records[r.rname].append(r)
 
         if "*" in refs_records:
             del refs_records["*"]
@@ -724,8 +723,12 @@ def plotly_clips(bam_path):
 
     aln = list(parse_bam(bam_path).items())[0][1]
     aligned_depth = [sum(weight.values()) for weight in aln.weights]
+    weights_fmt = "\n".join([f"{i+1} {w}" for i, w in enumerate(aligned_depth)])
+    logging.debug(weights_fmt)
     ins = [sum(i.values()) for i in aln.insertions]
-    x_axis = list(range(len(aligned_depth)))
+    ins_fmt = "\n".join([f"{i+1} {w}" for i, w in enumerate(ins)])
+    logging.debug(ins_fmt)
+    x_axis = list(range(1, len(aligned_depth) + 1))  # Add 1 to all positions
     traces = [
         go.Scattergl(x=x_axis, y=aligned_depth, mode="lines", name="Aligned depth"),
         go.Scattergl(
