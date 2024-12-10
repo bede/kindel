@@ -72,7 +72,7 @@ def parse_records(ref_id, ref_len, records):
                             clip_end_weights[rel_r_pos][q_nt] += 1
                     q_pos += length
                 else:  # Count left-of-gap / r-clipped start position (e.g. end of ref)
-                    clip_starts[r_pos] += 1
+                    clip_starts[r_pos - 1] += 1
                     for pos in range(length):
                         q_nt = record.seq[q_pos].upper()
                         if r_pos < ref_len:
