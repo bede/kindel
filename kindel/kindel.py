@@ -8,7 +8,6 @@ from collections import OrderedDict, defaultdict, namedtuple
 
 import dnaio
 
-import numpy as np
 import pandas as pd
 
 from . import cli
@@ -26,74 +25,126 @@ def parse_records(ref_id, ref_len, records):
     clip_starts, clip_ends: lists of clipping start and end frequencies in an LTR direction
     clip_start_weights, clip_end_weights: base frequencies from left- and right-clipped regions
     """
-    weights = [{"A": 0, "T": 0, "G": 0, "C": 0, "N": 0} for p in range(ref_len)]
+    # Initialize data structures
+    weights = [{"A": 0, "T": 0, "G": 0, "C": 0, "N": 0} for _ in range(ref_len)]
     clip_start_weights = [
-        {"A": 0, "T": 0, "G": 0, "C": 0, "N": 0} for p in range(ref_len)
+        {"A": 0, "T": 0, "G": 0, "C": 0, "N": 0} for _ in range(ref_len)
     ]
     clip_end_weights = [
-        {"A": 0, "T": 0, "G": 0, "C": 0, "N": 0} for p in range(ref_len)
+        {"A": 0, "T": 0, "G": 0, "C": 0, "N": 0} for _ in range(ref_len)
     ]
     clip_starts = [0] * (ref_len + 1)
     clip_ends = [0] * (ref_len + 1)
-    insertions = [defaultdict(int) for p in range(ref_len + 1)]
+    insertions = [defaultdict(int) for _ in range(ref_len + 1)]
     deletions = [0] * (ref_len + 1)
-    for record in tqdm.tqdm(records, desc="loading sequences"):  # Progress bar
+
+    # Process records with optimized loops
+    for record in tqdm.tqdm(records, desc="loading sequences"):
+        if not record.mapped or len(record.seq) <= 1:
+            continue
+
+        seq = record.seq  # Cache sequence for faster access
+        seq_len = len(seq)
         q_pos = 0
         r_pos = record.pos - 1  # Zero indexed genome coordinates
-        if (
-            not record.mapped or len(record.seq) <= 1
-        ):  # Skips unmapped, reads with sequence '*'
-            continue
-        for i, cigarette in enumerate(record.cigars):  # StopIteration -> RuntimeError
-            length, operation = cigarette
-            if operation in {"M", "=", "X"}:  # Catch SAM 1.{3,4} matches and subs
-                for _ in range(length):
-                    q_nt = record.seq[q_pos].upper()
-                    weights[r_pos][q_nt] += 1
-                    r_pos += 1
-                    q_pos += 1
-            elif operation == "I":
-                nts = record.seq[q_pos : q_pos + length].upper()
-                insertions[r_pos][nts] += 1
+
+        for i, (length, operation) in enumerate(record.cigars):
+            if operation in {"M", "=", "X"}:  # Match or mismatch
+                # Calculate valid range for processing
+                valid_length = min(length, seq_len - q_pos, ref_len - r_pos)
+
+                # Fast path for the common case where everything is in range
+                if valid_length > 0:
+                    for j in range(valid_length):
+                        q_nt = seq[q_pos + j].upper()
+                        weights[r_pos + j][q_nt] += 1
+
                 q_pos += length
-            elif operation == "D":
-                for del_i in range(length):
-                    deletions[r_pos + del_i] += 1
                 r_pos += length
-            elif operation == "S":
-                if (
-                    i == 0
-                ):  # Count right-of-gap / l-clipped start positions (e.g. start of ref)
-                    clip_ends[r_pos] += 1
-                    for gap_i in range(length):
-                        q_nt = record.seq[gap_i].upper()
+
+            elif operation == "I":  # Insertion
+                if 0 <= r_pos < ref_len + 1 and q_pos < seq_len:
+                    valid_length = min(length, seq_len - q_pos)
+                    if valid_length > 0:
+                        nts = seq[q_pos : q_pos + valid_length].upper()
+                        insertions[r_pos][nts] += 1
+                q_pos += length
+
+            elif operation == "D":  # Deletion
+                for del_i in range(min(length, ref_len + 1 - r_pos)):
+                    del_pos = r_pos + del_i
+                    if 0 <= del_pos < ref_len + 1:
+                        deletions[del_pos] += 1
+                r_pos += length
+
+            elif operation == "S":  # Soft clipping
+                if i == 0:  # Left clip
+                    if 0 <= r_pos < ref_len + 1:
+                        clip_ends[r_pos] += 1
+
+                    # Process clip end weights
+                    for gap_i in range(min(length, seq_len)):
+                        q_nt = seq[gap_i].upper()
                         rel_r_pos = r_pos - length + gap_i
-                        if rel_r_pos >= 0:
+                        if 0 <= rel_r_pos < ref_len:
                             clip_end_weights[rel_r_pos][q_nt] += 1
                     q_pos += length
-                else:  # Count left-of-gap / r-clipped start position (e.g. end of ref)
-                    clip_starts[r_pos - 1] += 1
-                    for pos in range(length):
-                        q_nt = record.seq[q_pos].upper()
-                        if r_pos < ref_len:
-                            clip_start_weights[r_pos][q_nt] += 1
-                            r_pos += 1
-                            q_pos += 1
 
+                else:  # Right clip
+                    if 0 <= r_pos - 1 < ref_len + 1:
+                        clip_starts[r_pos - 1] += 1
+
+                    # Process clip start weights
+                    valid_length = min(length, seq_len - q_pos, ref_len - r_pos)
+                    for j in range(valid_length):
+                        q_nt = seq[q_pos + j].upper()
+                        clip_start_weights[r_pos + j][q_nt] += 1
+
+                    q_pos += length
+                    r_pos += length
+
+    # Calculate aligned depth for each position
     aligned_depth = [sum(w.values()) for w in weights]
-    weights_consensus_seq = "".join([consensus(w)[0] for w in weights])
-    discordant_depth = [
-        sum({nt: w[nt] for nt in [k for k in w.keys() if k != cns_nt]}.values())
-        for w, cns_nt in zip(weights, weights_consensus_seq)
-    ]
-    consensus_depth = np.array(aligned_depth) - np.array(discordant_depth)
-    clip_start_depth = [
-        sum({nt: w[nt] for nt in list("ACGT")}.values()) for w in clip_start_weights
-    ]
-    clip_end_depth = [
-        sum({nt: w[nt] for nt in list("ACGT")}.values()) for w in clip_end_weights
-    ]
-    clip_depth = list(map(lambda x, y: x + y, clip_start_depth, clip_end_depth))
+
+    # Generate consensus sequence with a single pass
+    weights_consensus_seq = ""
+    for w in weights:
+        weights_consensus_seq += consensus(w)[0]
+
+    # Calculate discordant depths efficiently
+    discordant_depth = []
+    for i, w in enumerate(weights):
+        cns_nt = weights_consensus_seq[i]
+        discordant_sum = sum(count for base, count in w.items() if base != cns_nt)
+        discordant_depth.append(discordant_sum)
+
+    # Calculate consensus depth directly
+    consensus_depth = []
+    for i in range(len(aligned_depth)):
+        consensus_depth.append(aligned_depth[i] - discordant_depth[i])
+
+    # Calculate clip depths using direct calculations
+    nucleotides = "ACGT"
+    clip_start_depth = []
+    clip_end_depth = []
+
+    for w in clip_start_weights:
+        depth = 0
+        for nt in nucleotides:
+            depth += w[nt]
+        clip_start_depth.append(depth)
+
+    for w in clip_end_weights:
+        depth = 0
+        for nt in nucleotides:
+            depth += w[nt]
+        clip_end_depth.append(depth)
+
+    clip_depth = []
+    for i in range(len(clip_start_depth)):
+        clip_depth.append(clip_start_depth[i] + clip_end_depth[i])
+
+    # Create and return the alignment tuple
     alignment = namedtuple(
         "alignment",
         [
