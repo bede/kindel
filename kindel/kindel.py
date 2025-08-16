@@ -185,6 +185,7 @@ def cdr_start_consensuses(
         ):
             logging.debug("Starting extension")
             start_pos = pos
+            end_pos = start_pos  # Initialise end_pos in case loop has no iterations
             clip_consensus = ""
             for pos_, (csd_, csw_, w_, d_) in enumerate(
                 zip(
@@ -245,6 +246,7 @@ def cdr_end_consensuses(
         ):
             logging.debug("Starting extension")
             end_pos = pos + 1  # Start with end since we're iterating in reverse
+            start_pos = pos  # Initialise start_pos in case loop has no iterations
             rev_clip_consensus = ""
             for pos_, ced_, cew_, w_, d_ in reversed_weights[len(positions) - pos :]:
                 start_pos = pos_
@@ -263,6 +265,9 @@ def cdr_end_consensuses(
                         f"Stopping extension ({ced_} > {sum(w_.values(), d_) * clip_decay_threshold} is False)"
                     )
                     break
+            else:
+                # If loop completes without breaking, still need to reverse the consensus
+                clip_consensus = rev_clip_consensus[::-1]
             regions.append(Region(start_pos, end_pos, clip_consensus, "←"))
 
     for region in regions:
